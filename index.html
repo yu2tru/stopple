@@ -364,6 +364,12 @@ const PROMPTS = [
     obstacle: 'plywood',    name: '1/4 inch plywood sheet',      plural: '1/4 inch plywood sheets', short: 'plywood sheet', breakEnergy: 25 },
   { subject: 'A ping pong ball', projectile: 'pingpong', mass: 0.0027, mph: 60,
     obstacle: 'tissue',     name: 'Tissue sheet',                plural: 'tissue sheets',          short: 'tissue sheet', breakEnergy: 0.08 },
+  { subject: 'A dart',           projectile: 'dart',     mass: 0.02,   mph: 60,
+    obstacle: 'balloon',    name: 'Party balloon',               plural: 'party balloons',         short: 'balloon',      breakEnergy: 0.65 },
+  { subject: 'A cannonball',     projectile: 'cannonball', mass: 4.0,  mph: 50,
+    obstacle: 'hay',        name: 'Hay bale',                    plural: 'hay bales',              short: 'hay bale',     breakEnergy: 120 },
+  { subject: 'A snowball',       projectile: 'snowball', mass: 0.2,    mph: 45,
+    obstacle: 'snowman',    name: 'Snowman',                     plural: 'snowmen',                short: 'snowman',      shortPlural: 'snowmen', breakEnergy: 6 },
 ];
 
 /* =====================================================================
@@ -390,6 +396,7 @@ const easeInOutCubic = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3)
 const easeOutBack = t => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
 const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const pluralize = s => /(x|s|ch|sh)$/.test(s) ? s + 'es' : s + 's';
+const shortPl = p => p.shortPlural || pluralize(p.short); // optional `shortPlural` for irregular words
 const projName = p => p.subject.replace(/^(a|an)\s+/i, '');
 const escapeHtml = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -514,12 +521,40 @@ const Sound = (() => {
             noise(t, .09, { type: 'bandpass', freq: 1700 * k, q: 2, gain: .46 });
             tone(t, 190 * k, .11, { type: 'triangle', gain: .2, freqEnd: 90 });
             break;
+          case 'rip': // quick tearing grains rising in pitch
+            for (let i = 0; i < 16; i++) noise(t + i * .014 + Math.random() * .006, .028, { type: 'bandpass', freq: (1300 + i * 90) * k, q: 4, gain: rand(.12, .3) });
+            noise(t, .26, { type: 'bandpass', freq: 2000 * k, q: .7, gain: .05 });
+            break;
+          case 'book': // dull thump plus a page flutter
+            tone(t, 150 * k, .16, { gain: .32, freqEnd: 70 });
+            noise(t, .1, { type: 'lowpass', freq: 700, gain: .35 });
+            for (let i = 0; i < 6; i++) noise(t + .03 + i * .025, .045, { type: 'bandpass', freq: 1600 * k, q: 1.5, gain: .1 });
+            break;
+          case 'pop':
+            noise(t, .07, { type: 'highpass', freq: 900, gain: .7, attack: .001 });
+            tone(t, 260 * k, .06, { gain: .3, freqEnd: 90 });
+            break;
+          case 'straw':
+            for (let i = 0; i < 10; i++) noise(t + i * .02 + Math.random() * .01, .035, { type: 'bandpass', freq: rand(2400, 4200), q: 3, gain: .14 });
+            tone(t, 110 * k, .15, { gain: .25, freqEnd: 60 });
+            noise(t, .12, { type: 'lowpass', freq: 500, gain: .3 });
+            break;
+          case 'snow':
+            noise(t, .22, { type: 'lowpass', freq: 1100 * k, gain: .45, attack: .01 });
+            for (let i = 0; i < 6; i++) noise(t + i * .025, .04, { type: 'bandpass', freq: rand(1500, 3000), q: 2, gain: .1 });
+            tone(t, 100, .12, { gain: .15, freqEnd: 55 });
+            break;
           case 'melon':
             tone(t, 95 * k, .22, { gain: .38, freqEnd: 48 });
             noise(t + .02, .24, { type: 'lowpass', freq: 900 * k, gain: .3 });
             break;
         }
       });
+    },
+    stopHit(kind) { // the final obstacle holds: a thud, or a rubbery boing for balloons
+      if (kind === 'pop') play(t => { tone(t, 150, .4, { gain: .3, freqEnd: 340 }); tone(t + .05, 300, .25, { gain: .07, freqEnd: 520 }); });
+      else if (kind === 'rip' || kind === 'soft') play(t => noise(t, .2, { type: 'lowpass', freq: 600, gain: .35, attack: .01 }));
+      else this.thud();
     },
     thud: () => play(t => { tone(t, 130, .22, { gain: .34, freqEnd: 55 }); noise(t, .09, { type: 'lowpass', freq: 650, gain: .3 }); }),
     chime: () => play(t => [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
@@ -651,6 +686,30 @@ M.melon = new THREE.MeshStandardMaterial({
     }
   }),
 });
+const BALLOON_COLORS = ['#F2707A', '#7FB2F0', '#F6C445', '#8ED39A', '#C49BF2', '#FF9DBB'];
+Object.assign(M, {
+  melonPale: mat('#E4F2C9', { roughness: .6 }),
+  string: mat('#F7F4EC', { roughness: .8 }),
+  weight: mat('#4A4A58', { roughness: .4 }),
+  twine: mat('#B07B42', { roughness: .8 }),
+  straw: mat('#E9C766', { roughness: .9 }),
+  snow: mat('#FFFFFF', { roughness: .95 }),
+  coal: mat('#2B2B30', { roughness: .6 }),
+  carrot: mat('#F28A3B', { roughness: .55 }),
+  twig: mat('#8A5A35', { roughness: .8 }),
+  scarf: mat('#EE6A5B', { roughness: .85 }),
+});
+M.hay = new THREE.MeshStandardMaterial({
+  roughness: .95,
+  map: canvasTexture(256, 256, (g, w, h) => {
+    g.fillStyle = '#E6C062'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 700; i++) {
+      g.strokeStyle = Math.random() < .5 ? 'rgba(170,125,40,.35)' : 'rgba(255,240,170,.5)'; g.lineWidth = rand(1, 2.5);
+      const x = rand(0, w), y = rand(0, h), a = rand(-.5, .5), l = rand(10, 30);
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke();
+    }
+  }),
+});
 M.plywood = new THREE.MeshStandardMaterial({
   roughness: .7,
   map: canvasTexture(256, 256, (g, w, h) => {
@@ -663,6 +722,7 @@ M.plywood = new THREE.MeshStandardMaterial({
     }
   }),
 });
+M.plywood.map.wrapS = M.plywood.map.wrapT = THREE.RepeatWrapping; // split pieces use world-size UVs
 
 /* ---------- reusable piece geometries for debris ---------- */
 const PIECE_GEO = {
@@ -689,10 +749,22 @@ const OBSTACLE_MODELS = {
       const sh1 = mesh(rbox(.07, .5, .05, .02), M.shine, false); sh1.position.set(0, 1.05, -.22); sh1.rotation.x = .6; g.add(sh1);
       const sh2 = mesh(rbox(.07, .24, .04, .015), M.shine, false); sh2.position.set(0, .95, -.06); sh2.rotation.x = .6; g.add(sh2);
     },
-    pieces: [
-      { geo: 'shard', mat: 'glassShard', n: 14, size: [.12, .26], shape: [1, 1.5, .3] },
-      { geo: 'chunk', mat: 'white', n: 4, size: [.1, .14], shape: [1, 1, 3.5] },
-    ],
+    // glass really does shatter: shards plus the frame snapping into sticks
+    breakFx(o, f) {
+      const x = o.group.position.x;
+      for (const [y, len, rotZ] of [[.07, 1.34, 0], [1.53, 1.34, 0]]) {
+        const m = mesh(rbox(.14, .12, len / 2, .045), M.white);
+        for (const side of [-1, 1]) {
+          const c = m.clone(); c.position.set(x, y, side * len / 4); c.rotation.z = rotZ;
+          addPiece(c, { dims: [.14, .12, len / 2], v: V(rand(.8, 2) * f, rand(.5, 2), side * rand(.6, 1.6)), av: V(rand(-6, 6), rand(-3, 3), rand(-6, 6)) });
+        }
+      }
+      for (const z of [-.62, .62]) {
+        const s = mesh(rbox(.12, 1.6, .1, .045), M.white); s.position.set(x, .8, z);
+        addPiece(s, { dims: [.12, 1.6, .1], v: V(rand(.5, 1.2) * f, .3, Math.sign(z) * rand(.5, 1)), av: V(Math.sign(z) * rand(2, 4), 0, -rand(1, 3)) });
+      }
+    },
+    pieces: [{ geo: 'shard', mat: 'glassShard', n: 16, size: [.12, .26], shape: [1, 1.5, .3] }],
   },
   pillow: {
     depth: .44, width: 1.3, height: 1.06, spacing: .7, hitY: .55, sound: 'soft', soft: true,
@@ -700,19 +772,33 @@ const OBSTACLE_MODELS = {
       const p = mesh(rbox(.42, 1.0, 1.26, .2, 5), M.pillow); p.position.y = .53; g.add(p);
       const pipe = mesh(rbox(.06, 1.04, 1.3, .03, 2), M.pillowPiping); pipe.position.y = .53; g.add(pipe);
     },
-    pieces: [
-      { geo: 'ball', mat: 'fluff', n: 16, size: [.07, .16], drag: 3.2, grav: .3 },
-      { geo: 'flat', mat: 'pillow', n: 3, size: [.28, .4], shape: [1, .12, .9], drag: 1.6, grav: .6 },
-    ],
+    // the case bursts and flops down empty while the stuffing puffs out
+    breakFx(o, f) {
+      const c = new THREE.Group();
+      c.add(mesh(rbox(.14, .96, 1.24, .06, 3), M.pillow));
+      const pp = mesh(rbox(.03, 1.0, 1.28, .015, 1), M.pillowPiping); c.add(pp);
+      c.position.set(o.group.position.x, .53, 0);
+      addPiece(c, { dims: [.14, .96, 1.24], v: V(rand(1.8, 2.6) * f, 1.4, rand(-.4, .4)), av: V(rand(-1.5, 1.5), rand(-1.5, 1.5), -rand(3, 5)), drag: 1.1, grav: .7 });
+    },
+    pieces: [{ geo: 'ball', mat: 'fluff', n: 22, size: [.07, .17], drag: 3.2, grav: .3 }],
   },
   drywall: {
     depth: .12, width: 1.3, height: 1.5, spacing: .5, hitY: .78, sound: 'wood', crack: 'dark',
     build(g) {
       const s = mesh(rbox(.12, 1.5, 1.3, .03), M.drywall); s.position.y = .75; g.add(s);
     },
+    // splits down a jagged line, both halves topple sideways
+    breakFx(o, f) {
+      const parts = splitPanel('drywall', { w: 1.3, h: 1.5, thick: .12, axis: 'v', at: .04, amp: .13, teeth: 9 });
+      parts.forEach((p, k) => {
+        const side = k ? 1 : -1, m = mesh(p.geo, M.drywall);
+        m.position.set(o.group.position.x, 0, 0).add(p.center);
+        addPiece(m, { dims: p.dims, v: V(rand(1, 1.8) * f, rand(.4, 1), side * rand(.8, 1.5)), av: V(side * rand(3, 5), rand(-1, 1), -rand(1, 2.5)) });
+      });
+    },
     pieces: [
-      { geo: 'chunk', mat: 'drywall', n: 10, size: [.16, .3], shape: [.45, 1, 1] },
-      { geo: 'ball', mat: 'drywallCore', n: 6, size: [.04, .07], drag: 3, grav: .4 },
+      { geo: 'chunk', mat: 'drywall', n: 7, size: [.12, .24], shape: [.45, 1, 1] },
+      { geo: 'ball', mat: 'drywallCore', n: 8, size: [.04, .07], drag: 3, grav: .4 },
     ],
   },
   cardboard: {
@@ -723,10 +809,21 @@ const OBSTACLE_MODELS = {
       const t2 = mesh(rbox(.02, .3, .2, .008, 1), M.tape, false); t2.position.set(-.41, .66, 0); g.add(t2);
       const t3 = t2.clone(); t3.position.x = .41; g.add(t3);
     },
-    pieces: [
-      { geo: 'flat', mat: 'cardboard', n: 7, size: [.34, .5], shape: [1, .06, .85] },
-      { geo: 'flat', mat: 'tape', n: 2, size: [.18, .24], shape: [1, .05, .5] },
-    ],
+    // the box bursts open into its flat panels
+    breakFx(o, f) {
+      const x = o.group.position.x;
+      const P = [
+        [[.04, .8, .92], [-.4, .4, 0], [-.4, 0, 0]], [[.04, .8, .92], [.4, .4, 0], [1, 0, 0]],
+        [[.82, .8, .04], [0, .4, -.45], [0, 0, -1]], [[.82, .8, .04], [0, .4, .45], [0, 0, 1]],
+        [[.82, .04, .92], [0, .79, 0], [0, 1, 0]],
+      ];
+      for (const [d, off, dir] of P) {
+        const m = mesh(rbox(d[0], d[1], d[2], .015, 1), M.cardboard);
+        m.position.set(x + off[0], off[1], off[2]);
+        addPiece(m, { dims: d, v: V(dir[0] * 1.5 + rand(1, 2) * f, 1.2 + dir[1] * 1.5 + rand(0, .8), dir[2] * rand(1.2, 2)), av: V(rand(-4, 4), rand(-2, 2), rand(-4, 4)), drag: .6 });
+      }
+    },
+    pieces: [{ geo: 'flat', mat: 'tape', n: 3, size: [.16, .24], shape: [1, .05, .5] }],
   },
   watermelon: {
     depth: .78, width: 1.0, height: .78, spacing: .92, hitY: .4, sound: 'melon', soft: true,
@@ -735,47 +832,150 @@ const OBSTACLE_MODELS = {
       m.scale.set(.78, 1.0, .78); m.position.y = .39; g.add(m);
       const stem = mesh(cylGeo(.025, .035, .08, 10), M.melonRind); stem.position.set(0, .39, -.5); stem.rotation.x = Math.PI / 2; g.add(stem);
     },
+    // splits into two halves that land red side up
+    breakFx(o, f) {
+      const dome = cached('melonDome', () => new THREE.SphereGeometry(.5, 32, 14, 0, Math.PI * 2, 0, Math.PI / 2));
+      const cap = cached('melonCap', () => new THREE.CircleGeometry(.47, 32).rotateX(Math.PI / 2));
+      const ring = cached('melonRing', () => new THREE.RingGeometry(.47, .5, 32).rotateX(Math.PI / 2));
+      for (const side of [-1, 1]) {
+        const h = new THREE.Group();
+        const inner = new THREE.Group(); inner.scale.set(.78, 1, .78); h.add(inner);
+        inner.add(mesh(dome, M.melon));
+        const c = mesh(cap, M.melonRed, false); c.position.y = -.002; inner.add(c);
+        const r = mesh(ring, M.melonPale, false); r.position.y = -.002; inner.add(r);
+        h.rotation.x = side * Math.PI / 2;
+        h.position.set(o.group.position.x, .39, side * .02);
+        addPiece(h, {
+          v: V(rand(1, 1.8) * f, rand(1.8, 2.6), side * rand(1.2, 2)), av: V(side * rand(4, 7), rand(-3, 3), rand(-2, 2)),
+          rest: .5, target: new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI, rand(0, 6.28), 0, 'YXZ')),
+        });
+      }
+    },
     pieces: [
-      { geo: 'dodec', mat: 'melonRed', n: 9, size: [.16, .28] },
-      { geo: 'flat', mat: 'melonRind', n: 5, size: [.2, .32], shape: [1, .22, .8] },
+      { geo: 'dodec', mat: 'melonRed', n: 6, size: [.12, .22] },
       { geo: 'ball', mat: 'seed', n: 6, size: [.035, .05], shape: [.6, 1, .6] },
     ],
   },
   phonebook: {
-    depth: .46, width: .88, height: 1.1, spacing: .66, hitY: .58, sound: 'paper', crack: 'dark',
+    depth: .46, width: .88, height: 1.1, spacing: .66, hitY: .58, sound: 'book', crack: 'dark',
     build(g) {
       const pages = mesh(rbox(.38, 1.03, .8, .03), M.pages); pages.position.set(0, .54, .03); g.add(pages);
       for (const x of [-.21, .21]) { const c = mesh(rbox(.04, 1.08, .86, .02), M.bookCover); c.position.set(x, .54, 0); g.add(c); }
       const spine = mesh(rbox(.46, 1.08, .06, .03), M.bookCover); spine.position.set(0, .54, -.41); g.add(spine);
     },
-    pieces: [
-      { geo: 'flat', mat: 'pages', n: 12, size: [.24, .36], shape: [1, .03, .75], drag: 2.2, grav: .45 },
-      { geo: 'flat', mat: 'bookCover', n: 3, size: [.28, .4], shape: [1, .06, .8] },
-    ],
+    // torn clean in half, with loose pages fluttering out
+    breakFx(o, f) {
+      for (const side of [-1, 1]) {
+        const h = new THREE.Group();
+        const pages = mesh(rbox(.38, 1.03, .4, .02), M.pages); pages.position.z = side * .01; h.add(pages);
+        for (const x of [-.21, .21]) { const c = mesh(rbox(.04, 1.08, .43, .02), M.bookCover); c.position.x = x; h.add(c); }
+        if (side < 0) { const sp = mesh(rbox(.46, 1.08, .05, .02), M.bookCover); sp.position.z = -.2; h.add(sp); }
+        h.position.set(o.group.position.x, .54, side * .215);
+        addPiece(h, { dims: [.46, 1.08, .47], v: V(rand(1, 2) * f, rand(1.4, 2.4), side * rand(1, 1.8)), av: V(side * rand(3, 6), rand(-2, 2), -rand(2, 4)) });
+      }
+    },
+    pieces: [{ geo: 'flat', mat: 'pages', n: 12, size: [.22, .34], shape: [1, .03, .75], drag: 2.4, grav: .4 }],
   },
   plywood: {
     depth: .08, width: 1.3, height: 1.4, spacing: .48, hitY: .74, sound: 'wood', crack: 'dark',
     build(g) {
       const s = mesh(rbox(.08, 1.4, 1.3, .025), M.plywood); s.position.y = .7; g.add(s);
     },
-    pieces: [
-      { geo: 'chunk', mat: 'plywood', n: 8, size: [.18, .32], shape: [.25, .3, 1.6] },
-      { geo: 'flat', mat: 'plywood', n: 4, size: [.22, .34], shape: [.25, 1, 1] },
-    ],
+    // snaps across a splintered line: the top flies, the bottom topples
+    breakFx(o, f) {
+      const parts = splitPanel('plywood', { w: 1.3, h: 1.4, thick: .08, axis: 'h', at: .74, amp: .1, teeth: 11 });
+      parts.forEach((p, k) => {
+        const top = k === 1, m = mesh(p.geo, M.plywood);
+        m.position.set(o.group.position.x, 0, 0).add(p.center);
+        addPiece(m, top
+          ? { dims: p.dims, v: V(rand(2.2, 3.2) * f, rand(1.2, 2), rand(-.5, .5)), av: V(rand(-1.5, 1.5), rand(-1, 1), -rand(6, 9)) }
+          : { dims: p.dims, v: V(rand(.8, 1.3) * f, .2, rand(-.2, .2)), av: V(rand(-.5, .5), 0, -rand(3, 4.5)) });
+      });
+    },
+    pieces: [{ geo: 'chunk', mat: 'plywood', n: 7, size: [.16, .3], shape: [.22, .25, 1.6] }],
   },
   tissue: {
-    depth: .08, width: 1.16, height: 1.3, spacing: .46, hitY: .76, sound: 'paper', soft: true,
+    depth: .08, width: 1.16, height: 1.3, spacing: .46, hitY: .76, sound: 'rip', soft: true,
     build(g) {
       for (const z of [-.56, .56]) {
-        const p = mesh(cylGeo(.035, .035, 1.3, 14), M.tissuePost); p.position.set(0, .65, z); g.add(p);
-        const f = mesh(roundedCylGeo(.1, .05, .02), M.tissuePost); f.position.set(0, .025, z); g.add(f);
-        const k = mesh(sphereGeo(.05, 16, 12), M.tissuePost); k.position.set(0, 1.31, z); g.add(k);
+        const p = mesh(cylGeo(.035, .035, 1.3, 14), M.tissuePost); p.position.set(0, .65, z); p.userData.keep = true; g.add(p);
+        const f = mesh(roundedCylGeo(.1, .05, .02), M.tissuePost); f.position.set(0, .025, z); f.userData.keep = true; g.add(f);
+        const k = mesh(sphereGeo(.05, 16, 12), M.tissuePost); k.position.set(0, 1.31, z); k.userData.keep = true; g.add(k);
       }
       const t = mesh(rbox(.016, 1.0, 1.08, .006, 1), M.tissue); t.position.y = .76; g.add(t);
     },
+    // rips down the middle and the two halves float away (the stand stays)
+    breakFx(o, f) {
+      const parts = splitPanel('tissue', { w: 1.08, h: 1.0, thick: .014, axis: 'v', at: 0, amp: .07, teeth: 12 });
+      parts.forEach((p, k) => {
+        const side = k ? 1 : -1, m = mesh(p.geo, M.tissue);
+        m.position.set(o.group.position.x, .26, 0).add(p.center);
+        addPiece(m, { dims: p.dims, v: V(rand(.8, 1.6) * f, rand(.6, 1.2), side * rand(1.4, 2.2)), av: V(rand(-2, 2), side * rand(3, 5), rand(-3, 3)), drag: 2.6, grav: .2 });
+      });
+    },
+    pieces: [{ geo: 'flat', mat: 'tissue', n: 5, size: [.1, .18], shape: [1, .03, 1], drag: 4, grav: .22 }],
+  },
+  balloon: {
+    depth: .72, width: .72, height: 1.4, spacing: .8, hitY: .98, sound: 'pop', soft: true,
+    build(g, i) {
+      const bm = mat(BALLOON_COLORS[i % BALLOON_COLORS.length], { roughness: .28 });
+      const b = mesh(sphereGeo(.5), bm); b.scale.set(.72, .84, .72); b.position.y = .98; g.add(b);
+      const knot = mesh(cylGeo(.025, .05, .06, 12), bm); knot.position.y = .55; g.add(knot);
+      const str = mesh(cylGeo(.006, .006, .48, 6), M.string, false); str.position.y = .29; g.add(str);
+      const w = mesh(roundedCylGeo(.08, .07, .02), M.weight); w.position.y = .035; w.userData.keep = true; g.add(w);
+      g.userData.rubber = bm;
+    },
+    // pops into rubber scraps and the string drops
+    breakFx(o, f) {
+      const x = o.group.position.x, bm = o.inner.userData.rubber;
+      for (let k = 0; k < 7; k++) {
+        const a = rand(0, Math.PI * 2), s = rand(.1, .18);
+        const m = mesh(PIECE_GEO.flat(), bm); m.scale.set(s, s * .08, s * .8);
+        m.position.set(x + rand(-.2, .2), .98 + Math.sin(a) * .3, Math.cos(a) * .3);
+        addPiece(m, { dims: [s, s * .08, s * .8], v: V(rand(.5, 2) * f, Math.sin(a) * rand(1.5, 3), Math.cos(a) * rand(1.5, 3)), av: V(rand(-12, 12), rand(-12, 12), rand(-12, 12)), drag: 2, grav: .7 });
+      }
+      const st = mesh(cylGeo(.006, .006, .48, 6), M.string, false); st.position.set(x, .29, 0);
+      addPiece(st, { dims: [.012, .48, .012], v: V(.2, 0, 0), av: V(0, 0, -rand(1, 2)), drag: 1.5, grav: .6 });
+    },
+    pieces: [],
+  },
+  hay: {
+    depth: .7, width: 1.1, height: .7, spacing: .84, hitY: .36, sound: 'straw', soft: true,
+    build(g) {
+      const b = mesh(rbox(.7, .7, 1.1, .09), M.hay); b.position.y = .35; g.add(b);
+      for (const z of [-.28, .28]) { const t = mesh(rbox(.72, .72, .035, .09, 2), M.twine); t.position.set(0, .35, z); g.add(t); }
+    },
+    // bursts into two loose halves and a cloud of straw
+    breakFx(o, f) {
+      for (const side of [-1, 1]) {
+        const h = new THREE.Group();
+        h.add(mesh(rbox(.66, .64, .5, .09), M.hay));
+        const t = mesh(rbox(.68, .66, .035, .09, 2), M.twine); t.position.z = side * .03; h.add(t);
+        h.position.set(o.group.position.x, .33, side * .28);
+        addPiece(h, { dims: [.66, .64, .5], v: V(rand(1, 1.8) * f, rand(1, 2), side * rand(.8, 1.4)), av: V(side * rand(2, 4), rand(-2, 2), -rand(1, 3)) });
+      }
+    },
+    pieces: [{ geo: 'stick', mat: 'straw', n: 22, size: [.24, .4], shape: [.06, 1, .06], drag: .9, grav: .6 }],
+  },
+  snowman: {
+    depth: .72, width: .72, height: 1.45, spacing: .86, hitY: .86, sound: 'snow', soft: true,
+    build(g) {
+      const parts = snowmanParts();
+      g.add(parts.bottom, parts.middle, parts.head);
+    },
+    // knocked apart: the snowballs roll away, the head keeps its carrot
+    breakFx(o, f) {
+      const p = snowmanParts(), x = o.group.position.x;
+      const spec = [
+        [p.bottom, .36, V(rand(.6, 1.1) * f, .4, rand(-.6, .6))],
+        [p.middle, .27, V(rand(1.6, 2.4) * f, rand(1.2, 1.8), rand(-.8, .8))],
+        [p.head, .19, V(rand(1.4, 2.2) * f, rand(2.2, 3), rand(-1.2, 1.2))],
+      ];
+      for (const [obj, r, v] of spec) { obj.position.x += x; addPiece(obj, { v, av: V(rand(-4, 4), rand(-4, 4), rand(-6, -2)), rest: r, target: null }); }
+    },
     pieces: [
-      { geo: 'flat', mat: 'tissue', n: 12, size: [.18, .3], shape: [1, .03, 1], drag: 4, grav: .22 },
-      { geo: 'stick', mat: 'tissuePost', n: 2, size: [.5, .6], shape: [.07, 1, .07] },
+      { geo: 'ball', mat: 'snow', n: 12, size: [.06, .14] },
+      { geo: 'ball', mat: 'coal', n: 3, size: [.04, .05] },
     ],
   },
 };
@@ -817,6 +1017,27 @@ const PROJECTILE_MODELS = {
     } },
   puck: { front: .22, back: .22, bottom: .05, spin: 'flat',
     build(g) { g.add(mesh(roundedCylGeo(.22, .1, .025), M.dark)); } },
+  dart: { front: .38, back: .4, bottom: .07, spin: 'axis',
+    build(g) {
+      const tip = mesh(cylGeo(0, .012, .16, 10), M.steel); tip.rotation.z = -Math.PI / 2; tip.position.x = .3; g.add(tip);
+      const barrel = mesh(cylGeo(.032, .026, .24, 18), mat('#9AA6B8', { roughness: .3, metalness: .5 })); barrel.rotation.z = Math.PI / 2; barrel.position.x = .1; g.add(barrel);
+      const shaft = mesh(cylGeo(.012, .012, .22, 8), M.dark); shaft.rotation.z = Math.PI / 2; shaft.position.x = -.12; g.add(shaft);
+      for (let k = 0; k < 4; k++) {
+        const piv = new THREE.Group(); piv.rotation.x = k * Math.PI / 2; piv.position.x = -.3;
+        const v = mesh(rbox(.16, .1, .006, .003, 1), mat(k % 2 ? '#7FB2F0' : '#F6C445', { roughness: .6 })); v.position.y = .05; piv.add(v); g.add(piv);
+      }
+    } },
+  cannonball: { front: .3, back: .3, bottom: .3, spin: 'roll',
+    build(g) { g.add(mesh(sphereGeo(.3, 40, 28), mat('#34343E', { roughness: .3, metalness: .35 }))); } },
+  snowball: { front: .18, back: .18, bottom: .18, spin: 'roll',
+    build(g) {
+      const geo = cached('snowball', () => {
+        const s = new THREE.SphereGeometry(.18, 28, 20), pos = s.attributes.position, v = new THREE.Vector3();
+        for (let i = 0; i < pos.count; i++) { v.fromBufferAttribute(pos, i); const d = 1 + .07 * Math.sin(v.x * 41) * Math.sin(v.y * 37 + 1) * Math.sin(v.z * 43 + 2); pos.setXYZ(i, v.x * d, v.y * d, v.z * d); }
+        s.computeVertexNormals(); return s;
+      });
+      g.add(mesh(geo, M.snow));
+    } },
   knife: { front: .64, back: .68, bottom: .09, spin: 'none', sticky: .2,
     build(g) {
       const geo = cached('knifeBlade', () => {
@@ -874,7 +1095,7 @@ function makeObstacle(i, popIn) {
   const def = obstModel();
   const group = new THREE.Group();
   const inner = new THREE.Group();
-  def.build(inner);
+  def.build(inner, i);
   group.add(inner);
   group.position.x = obstX(i);
   const o = { group, inner, alive: true, wobble: null, pop: popIn ? 0 : 1 };
@@ -1010,10 +1231,67 @@ function resize() {
    DEBRIS
    ===================================================================== */
 const UP = new THREE.Vector3(0, 1, 0);
+const V = (x, y, z) => new THREE.Vector3(x, y, z);
+// orientation + resting height for a piece lying on its thinnest side
+function flatRest(dims) {
+  const i = dims.indexOf(Math.min(...dims)), yaw = rand(0, Math.PI * 2);
+  const e = i === 1 ? new THREE.Euler(0, yaw, 0) : i === 0 ? new THREE.Euler(0, yaw, Math.PI / 2, 'YXZ') : new THREE.Euler(Math.PI / 2, yaw, 0, 'YXZ');
+  return { target: new THREE.Quaternion().setFromEuler(e), rest: dims[i] / 2 };
+}
+// add any object to the debris simulation. target null = it rolls (spheres)
+function addPiece(obj, { v, av, dims, drag = .25, grav = 1, rest, target }) {
+  if (target === undefined) { const fr = flatRest(dims); target = fr.target; if (rest === undefined) rest = fr.rest; }
+  const shadow = pieces.length < 240;
+  obj.traverse(c => { if (c.isMesh) { c.castShadow = shadow && c.material !== M.glassShard; c.receiveShadow = true; } });
+  pieces.push({ m: obj, v, av, drag, grav, rest, target, grounded: false, sleep: 0, t: 0 });
+  world.add(obj);
+}
+// a flat panel split along a jagged line, as two ready-to-use pieces.
+// The panel stands in the y-z plane (thickness along x), bottom at y = 0.
+function splitPanel(key, { w, h, thick, axis, at, amp = .07, teeth = 8 }) {
+  return cached('split|' + key, () => {
+    const rng = mulberry32(hashSeed(key));
+    const edge = [];
+    for (let k = 0; k <= teeth; k++) {
+      const s = k / teeth, j = (k === 0 || k === teeth) ? 0 : (rng() * 2 - 1) * amp;
+      edge.push(axis === 'v' ? [at + j, s * h] : [-w / 2 + s * w, at + j]);
+    }
+    const rev = edge.slice().reverse();
+    const polys = axis === 'v'
+      ? [[[-w / 2, 0], ...edge, [-w / 2, h]], [[w / 2, 0], [w / 2, h], ...rev]]
+      : [[[-w / 2, 0], [w / 2, 0], ...rev], [...edge, [w / 2, h], [-w / 2, h]]];
+    return polys.map(pts => {
+      const shape = new THREE.Shape(pts.map(([a, b]) => new THREE.Vector2(a, b)));
+      const bev = Math.min(.01, thick * .2);
+      const g = new THREE.ExtrudeGeometry(shape, { depth: thick - bev * 2, bevelEnabled: true, bevelThickness: bev, bevelSize: bev, bevelSegments: 1 });
+      g.translate(0, 0, -(thick - bev * 2) / 2);
+      g.rotateY(-Math.PI / 2);
+      g.computeBoundingBox();
+      const center = g.boundingBox.getCenter(new THREE.Vector3()), size = g.boundingBox.getSize(new THREE.Vector3());
+      g.translate(-center.x, -center.y, -center.z);
+      return { geo: g, center, dims: [size.x, size.y, size.z] };
+    });
+  });
+}
+function snowmanParts() {
+  const ball = (r, y) => { const g = new THREE.Group(); g.add(mesh(sphereGeo(r, 32, 24), M.snow)); g.position.y = y; return g; };
+  const bottom = ball(.36, .34), middle = ball(.27, .86), head = ball(.19, 1.24);
+  for (const y of [.1, -.02]) { const b = mesh(sphereGeo(.028, 10, 8), M.coal); b.position.set(-.26, y, 0); middle.add(b); }
+  for (const z of [-1, 1]) {
+    const arm = mesh(cylGeo(.014, .014, .42, 6), M.twig); arm.position.set(0, .06, z * .38); arm.rotation.x = z * 1.0; middle.add(arm);
+    const eye = mesh(sphereGeo(.024, 10, 8), M.coal); eye.position.set(-.165, .05, z * .07); head.add(eye);
+  }
+  const nose = mesh(cylGeo(0, .04, .2, 12), M.carrot); nose.rotation.z = Math.PI / 2; nose.position.set(-.26, 0, 0); head.add(nose);
+  const scarf = mesh(cached('scarf', () => new THREE.TorusGeometry(.17, .05, 10, 28)), M.scarf); scarf.rotation.x = Math.PI / 2; scarf.position.y = -.16; head.add(scarf);
+  return { bottom, middle, head };
+}
 function spawnPieces(o, impactSpeed) {
   const def = obstModel();
+  const f = clamp(impactSpeed / 12, .5, 1.4);
+  if (def.breakFx) def.breakFx(o, f);
   const total = def.pieces.reduce((s, p) => s + p.n, 0);
-  const budget = clamp(Math.round(320 / Math.max(line.length, 1)), 6, total);
+  if (!total) return;
+  const budget = clamp(Math.round(260 / Math.max(line.length, 1)), 5, total);
   const scale = budget / total;
   const hitY = projY();
   for (const spec of def.pieces) {
@@ -1021,27 +1299,15 @@ function spawnPieces(o, impactSpeed) {
     for (let k = 0; k < n; k++) {
       const s = rand(spec.size[0], spec.size[1]);
       const shape = spec.shape || [1, 1, 1];
-      const m = mesh(PIECE_GEO[spec.geo](), M[spec.mat], pieces.length < 240);
+      const m = mesh(PIECE_GEO[spec.geo](), M[spec.mat]);
       m.scale.set(shape[0] * s, shape[1] * s, shape[2] * s);
       const y = rand(.1, def.height * .95), z = rand(-def.width / 2, def.width / 2) * .9;
       m.position.set(o.group.position.x + rand(-def.depth / 2, def.depth / 2), y, z);
       m.rotation.set(rand(0, 6.28), rand(0, 6.28), rand(0, 6.28));
       const near = 1.25 - Math.min(1, Math.hypot(y - hitY, z) / 1.2);
-      const v = new THREE.Vector3(
-        rand(.8, 2.6) + impactSpeed * .12 * near,
-        rand(.8, 3.8) * (.6 + near),
-        z / (def.width / 2) * rand(.6, 2.6) + rand(-.8, .8));
-      const ext = [m.scale.x, m.scale.y, m.scale.z];
-      const minI = ext.indexOf(Math.min(...ext));
-      const geoUnit = spec.geo === 'shard' ? .35 : .5;
-      const yaw = rand(0, Math.PI * 2);
-      const target = new THREE.Quaternion().setFromEuler(
-        minI === 1 ? new THREE.Euler(0, yaw, 0) : minI === 0 ? new THREE.Euler(0, yaw, Math.PI / 2, 'YXZ') : new THREE.Euler(Math.PI / 2, 0, yaw, 'ZXY'));
-      pieces.push({
-        m, v, av: new THREE.Vector3(rand(-12, 12), rand(-12, 12), rand(-12, 12)),
-        drag: spec.drag || .25, grav: spec.grav || 1, rest: ext[minI] * geoUnit, target, grounded: false, sleep: 0, t: 0,
-      });
-      world.add(m);
+      const v = V(rand(.8, 2.6) + impactSpeed * .12 * near, rand(.8, 3.8) * (.6 + near), z / (def.width / 2) * rand(.6, 2.6) + rand(-.8, .8));
+      const unit = spec.geo === 'shard' ? .7 : 1;
+      addPiece(m, { dims: [m.scale.x * unit, m.scale.y * unit, m.scale.z * unit], v, av: V(rand(-12, 12), rand(-12, 12), rand(-12, 12)), drag: spec.drag || .25, grav: spec.grav || 1 });
     }
   }
 }
@@ -1056,14 +1322,17 @@ function updatePieces(dt) {
     const pos = p.m.position;
     pos.addScaledVector(p.v, dt);
     if (pos.x > wallX - .04 && pos.y < wallH) { pos.x = wallX - .04; if (p.v.x > 0) p.v.x *= -.25; }
+    const rolls = p.target === null;
     if (pos.y <= p.rest) {
       pos.y = p.rest;
-      if (p.v.y < 0) p.v.y = Math.abs(p.v.y) > 1.2 ? -p.v.y * .28 : 0;
-      p.v.x *= Math.pow(.02, dt); p.v.z *= Math.pow(.02, dt);
+      if (p.v.y < 0) p.v.y = Math.abs(p.v.y) > 1.2 ? -p.v.y * (rolls ? .35 : .28) : 0;
+      const fr = Math.pow(rolls ? .35 : .02, dt);
+      p.v.x *= fr; p.v.z *= fr;
       p.grounded = true;
     }
     if (p.grounded && pos.y <= p.rest + .02) {
-      p.m.quaternion.slerp(p.target, Math.min(1, dt * 9));
+      if (rolls) { p.m.rotation.z -= p.v.x * dt / p.rest; p.m.rotation.x += p.v.z * dt / p.rest; }
+      else p.m.quaternion.slerp(p.target, Math.min(1, dt * 9));
       if (p.v.lengthSq() < .004) p.sleep += dt; else p.sleep = 0;
     } else {
       p.m.rotation.x += p.av.x * dt; p.m.rotation.y += p.av.y * dt; p.m.rotation.z += p.av.z * dt;
@@ -1159,7 +1428,8 @@ function updateAnim(realDt) {
     while (a.nextIdx < a.n && proj.x + pm.front >= frontFace(a.nextIdx)) {
       const o = line[a.nextIdx];
       if (a.nextIdx < a.broken) {
-        o.alive = false; o.group.visible = false;
+        o.alive = false;
+        for (const c of o.inner.children) if (!c.userData.keep) c.visible = false;
         spawnPieces(o, speed);
         Sound.hit(obstModel().sound);
         if (!REDUCED_MOTION) shake = Math.min(.14, shake + .05);
@@ -1172,7 +1442,7 @@ function updateAnim(realDt) {
         wallX = frontFace(a.nextIdx); wallH = obstModel().height;
         startWobble(o, 1);
         if (obstModel().crack) addCracks(o, obstModel().crack === 'light');
-        Sound.thud(); Sound.hit(obstModel().sound);
+        Sound.stopHit(obstModel().sound);
         if (!REDUCED_MOTION) shake = Math.min(.14, shake + .04);
         trail.visible = false;
         if (pm.sticky) { g.position.x = proj.x; o.inner.attach(g); proj.stuck = true; }
@@ -1418,17 +1688,17 @@ function recordCompletedDaily() {
 }
 
 function quipFor(r, p) {
-  const s = p.short, pl = pluralize(p.short), pr = projName(p), d = Math.abs(r.guess - r.answer);
+  const s = p.short, pl = shortPl(p), pr = projName(p);
   if (r.kind === 'exact') return pick([
     'Right on the money.', `Textbook stop. One ${s} lives to tell the tale.`,
     'Newton would be proud.', `Exactly enough ${pl}. Not one more.`, 'Physics brain, fully activated.',
   ]);
-  if (r.kind === 'over') return d === 1
-    ? pick([`Just one ${s} too careful.`, `One spare ${s}. Safe, but not perfect.`])
-    : pick([`${d} extra ${pl} just stood there watching.`, `Plenty of backup. ${d} ${pl} never got touched.`]);
-  return d === 1
-    ? pick([`So close. One more ${s} would have done it.`, `Agonizing. Just one ${s} short.`])
-    : pick([`The ${pr} barely noticed. ${d} more ${pl} needed.`, `Straight through. You were ${d} ${pl} short.`]);
+  if (r.kind === 'over') return pick([
+    `Too careful. Some ${pl} never got touched.`, `Plenty of backup ${pl}. Maybe too plenty.`, `The ${pr} gave up early. Bit of overkill.`,
+  ]);
+  return pick([
+    `Straight through. The ${pr} wanted more ${pl}.`, `The ${pr} barely noticed.`, `Not enough ${pl} to hold that ${pr}.`,
+  ]);
 }
 
 function showResult() {
@@ -1436,7 +1706,7 @@ function showResult() {
   game.phase = 'result';
   const title = { exact: 'Stopped!', over: 'Too many!', under: 'Broke through!' }[r.kind];
   el.resTitle.textContent = title;
-  el.resSub.innerHTML = `Answer <b>${r.answer}</b> · You <b>${r.guess}</b>`;
+  el.resSub.innerHTML = r.kind === 'exact' ? `Exactly <b>${r.guess}</b>` : `You placed <b>${r.guess}</b>`; // never reveal the answer on a miss
   el.resPts.innerHTML = `${r.points}<small>pts</small>`;
   el.quip.textContent = quipFor(r, p);
   const last = game.mode === 'daily' && store.daily.results.length >= ROUNDS_PER_DAY;
@@ -1541,7 +1811,7 @@ function openStats() {
       <ul class="rounds">${res.map(r => {
         const p = PROMPTS[r.p] || PROMPTS[0];
         return `<li><i class="dot" style="background:${sq[r.kind]}"></i>
-          <span>${escapeHtml(projName(p))} vs ${escapeHtml(pluralize(p.short))}<span class="meta">You ${r.guess} · Answer ${r.answer}</span></span>
+          <span>${escapeHtml(projName(p))} vs ${escapeHtml(shortPl(p))}<span class="meta">You ${r.guess}${r.kind === 'exact' ? ' · exact' : ''}</span></span>
           <span class="pts">${r.points}</span></li>`;
       }).join('')}</ul>
       <button class="btn" id="statsShare">Share</button></div>`;
