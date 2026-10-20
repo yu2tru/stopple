@@ -1545,6 +1545,12 @@ function startWobble(o, strength) { o.wobble = { t: 0, amp: strength }; }
 function updateObstacles(dt, realDt) {
   const def = obstModel();
   for (const o of line) {
+    if (o.shrink != null) { // shrinking away for a test throw
+      o.shrink -= realDt / .2;
+      if (o.shrink <= 0) { o.shrink = null; o.group.visible = false; o.inner.scale.setScalar(1); }
+      else o.inner.scale.setScalar(Math.max(.01, o.shrink * o.shrink));
+      continue;
+    }
     if (o.pop < 1) { o.pop = Math.min(1, o.pop + realDt / .28); o.inner.scale.setScalar(Math.max(.01, easeOutBack(o.pop))); }
     if (o.wobble) {
       const w = o.wobble; w.t += dt;
@@ -1702,19 +1708,40 @@ function startTest() {
   if (game.phase !== 'input' || game.testing || !proj) return;
   Sound.unlock();
   game.testing = 'flying';
-  for (const o of line) o.group.visible = false;
+  // obstacles shrink away; the camera holds still until the projectile nears the edge
+  for (const o of line) {
+    if (REDUCED_MOTION) o.group.visible = false;
+    else { o.pop = 1; o.shrink = 1; }
+  }
   if (marker) { world.remove(marker); marker = null; }
-  proj.group.visible = true;
   const D = testDistance(game.prompt);
   test = { phase: 'windup', t: 0, D, ease: clamp(3.8 - 2 * carryFactor(game.prompt), 1.4, 3.2), T: clamp(1.3 + D * .05, 1.6, 2.6), startX: projStartX(), landed: false, bounces: 0 };
-  viewExtraX = test.startX + Math.max(D, 11) + .8; // never zoom in tighter than a short throw
-  frameCamera({ keepDirection: true, animate: true });
+  marker = makeMarker(test.startX, test.startX + D);
   validate();
+}
+// zoom out only as far as needed to keep the projectile in view (never zooms in)
+function followCamera(x, dt) {
+  const box = sceneBounds();
+  const want = x + 2.2;
+  if (want <= box.max.x) return;
+  box.max.x = want;
+  const dir = camera.position.clone().sub(controls.target).normalize();
+  const target = box.getCenter(new THREE.Vector3()); target.y = box.max.y * .42;
+  const need = fitDistance(dir, target, box);
+  const cur = camera.position.distanceTo(controls.target);
+  const k = 1 - Math.exp(-dt * 6);
+  controls.target.lerp(target, k);
+  const d = Math.max(cur, THREE.MathUtils.lerp(cur, need, k));
+  camera.position.copy(controls.target).addScaledVector(dir, d);
+  controls.maxDistance = Math.max(controls.maxDistance, d * 1.3);
+  camTween = null;
 }
 function updateTest(realDt) {
   if (!test || test.phase === 'done') return;
   const pm = proj.model, g = proj.group, y0 = proj.y, floor = pm.bottom;
   test.t += realDt;
+  if (test.phase === 'returning') { updateReturn(realDt); return; }
+  updateMarker(realDt);
   if (test.phase === 'windup') {
     const k = Math.min(1, test.t / .32);
     g.position.set(test.startX - .42 * easeOutCubic(k), y0, 0);
@@ -1734,6 +1761,8 @@ function updateTest(realDt) {
   }
   const dx = x - test.lastX; test.lastX = x;
   g.position.set(x, y, 0);
+  test.x = x;
+  followCamera(x, realDt);
   if (pm.spin === 'roll') proj.spinner.rotation.z -= dx / pm.front * .6;
   if (pm.spin === 'flat') proj.spinner.rotation.y += dx * 2;
   if (pm.spin === 'axis') proj.spinner.rotation.x += dx * .8;
@@ -1745,50 +1774,87 @@ function updateTest(realDt) {
     trail.scale.set(Math.min(3, speed * .09), r, r);
   }
   if (u >= 1) {
-    test.phase = 'done';
+    test.phase = 'stopped';
     game.testing = 'landed';
-    marker = makeMarker(test.startX, x);
+    marker.userData.ring.forEach(r => { r.visible = true; r.userData.t = 0; });
     validate();
   }
 }
+// The ruler: ticks every unit (bigger every 5) that pop up as the projectile
+// passes over them, a line that grows behind it, and a ring where it stops.
 const tickMat = mat('#1f1c15', { transparent: true, opacity: .22, roughness: 1, depthWrite: false });
-function makeMarker(fromX, x) {
+function makeMarker(fromX, toX) {
   const g = new THREE.Group();
-  // ground ruler from the stand to the landing spot
-  for (let k = 0, d = 0; fromX + d < x - .3; k++, d += 1) {
+  const tm = tickMat.clone(), rm = M.flag.clone(); rm.transparent = true;
+  const ticks = [];
+  for (let k = 0, d = 0; fromX + d < toX - .3; k++, d += 1) {
     const big = k % 5 === 0;
-    const t = mesh(rbox(big ? .1 : .06, .012, big ? .5 : .26, .005, 1), tickMat, false);
-    t.position.set(fromX + d, .006, .9); g.add(t);
+    const t = mesh(rbox(big ? .1 : .06, .012, big ? .5 : .26, .005, 1), tm, false);
+    t.position.set(fromX + d, .006, .9); t.visible = false; t.userData.t = -1;
+    g.add(t); ticks.push(t);
   }
-  const lineBar = mesh(rbox(1, .01, .03, .004, 1), tickMat, false);
-  lineBar.scale.x = Math.max(.01, x - fromX); lineBar.position.set((fromX + x) / 2, .005, .9); g.add(lineBar);
-  // landing ring
-  const ring = mesh(cached('landRing', () => new THREE.TorusGeometry(.32, .03, 8, 40).rotateX(Math.PI / 2)), M.flag, false);
-  ring.position.set(x, .02, 0); g.add(ring);
-  const tick = mesh(rbox(.12, .012, .5, .005, 1), M.flag, false); tick.position.set(x, .007, .9); g.add(tick);
+  const bar = mesh(rbox(1, .01, .03, .004, 1), tm, false);
+  bar.position.set(fromX, .005, .9); bar.scale.x = .01; g.add(bar);
+  const ring = mesh(cached('landRing', () => new THREE.TorusGeometry(.32, .03, 8, 40).rotateX(Math.PI / 2)), rm, false);
+  ring.position.set(toX, .02, 0);
+  const end = mesh(rbox(.12, .012, .5, .005, 1), rm, false); end.position.set(toX, .007, .9);
+  for (const r of [ring, end]) { r.visible = false; r.scale.setScalar(.01); g.add(r); }
+  g.userData = { fromX, ticks, bar, ring: [ring, end], tm, rm };
   world.add(g);
   return g;
 }
-function addGhost() {
+function updateMarker(dt) {
   if (!marker) return;
-  const ghost = proj.group.clone(true);
-  ghost.traverse(c => { if (c.isMesh) { c.material = c.material.clone(); c.material.transparent = true; c.material.opacity = .35; c.material.depthWrite = false; c.castShadow = false; } });
-  ghost.scale.set(1, 1, 1);
-  marker.add(ghost);
+  const U = marker.userData;
+  const x = test && test.x != null ? test.x : U.fromX;
+  for (const t of U.ticks) {
+    if (t.userData.t < 0 && t.position.x <= x) { t.userData.t = 0; t.visible = true; }
+    if (t.userData.t >= 0 && t.userData.t < 1) {
+      t.userData.t = Math.min(1, t.userData.t + dt / .25);
+      t.scale.set(1, 1, Math.max(.01, easeOutBack(t.userData.t)));
+    }
+  }
+  const len = Math.max(.01, x - U.fromX);
+  U.bar.scale.x = len; U.bar.position.x = U.fromX + len / 2;
+  for (const r of U.ring) if (r.visible && r.userData.t < 1) {
+    r.userData.t = Math.min(1, r.userData.t + dt / .3);
+    r.scale.setScalar(Math.max(.01, easeOutBack(r.userData.t)));
+  }
 }
+// Bring back: ruler fades and the camera zooms in, then the obstacles pop back.
 function endTest() {
   if (game.testing !== 'landed') return;
-  addGhost();
-  game.testing = null; test = null;
-  const g = proj.group;
-  g.position.set(projStartX(), proj.y, 0);
+  game.testing = 'returning';
+  test.phase = 'returning'; test.t = 0; test.popped = false;
+  proj.group.position.set(projStartX(), proj.y, 0);
   proj.spinner.rotation.set(0, 0, 0);
-  for (const o of line) { o.group.visible = true; if (!REDUCED_MOTION) { o.pop = 0; o.inner.scale.setScalar(.01); } }
-  Sound.tick();
+  proj.group.scale.setScalar(.01);
+  viewExtraX = -Infinity;
   frameCamera({ keepDirection: true, animate: true });
+  Sound.tick();
   validate();
 }
-$('testBtn').addEventListener('click', () => { if (game.testing === 'landed') endTest(); else startTest(); });
+function updateReturn(dt) {
+  const t = test.t;
+  if (marker) {
+    updateMarker(dt);
+    const f = Math.max(0, 1 - t / .4);
+    marker.userData.tm.opacity = .22 * f;
+    marker.userData.rm.opacity = f;
+  }
+  proj.group.scale.setScalar(Math.max(.01, easeOutBack(Math.min(1, t / .3))));
+  if (t >= .5 && !test.popped) {
+    test.popped = true;
+    for (const o of line) { o.shrink = null; o.group.visible = true; if (!REDUCED_MOTION) { o.pop = 0; o.inner.scale.setScalar(.01); } else o.inner.scale.setScalar(1); }
+  }
+  if (t >= .85) {
+    if (marker) { world.remove(marker); marker.userData.tm.dispose(); marker.userData.rm.dispose(); marker = null; }
+    proj.group.scale.setScalar(1);
+    test = null; game.testing = null;
+    validate();
+  }
+}
+$('testBtn').addEventListener('click', () => { if (game.testing === 'landed') endTest(); else if (!game.testing) startTest(); });
 
 /* =====================================================================
    CONFETTI (2D overlay)
@@ -1910,8 +1976,8 @@ function validate() {
   el.minus.disabled = busy || (n !== null && n <= MIN_GUESS);
   el.plus.disabled = busy || (n !== null && n >= MAX_GUESS);
   el.guess.disabled = busy;
-  el.test.disabled = game.phase !== 'input' || game.testing === 'flying';
-  el.test.textContent = game.testing ? (game.testing === 'flying' ? 'Watching…' : 'Bring back') : 'Test throw';
+  el.test.disabled = game.phase !== 'input' || game.testing === 'flying' || game.testing === 'returning';
+  el.test.textContent = game.testing ? (game.testing === 'flying' ? 'Watching…' : game.testing === 'returning' ? 'Test throw' : 'Bring back') : 'Test throw';
 }
 function setLocked(locked) {
   el.guess.disabled = locked;
