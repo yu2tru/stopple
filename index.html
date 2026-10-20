@@ -1101,8 +1101,17 @@ function seamCurve(r, tube, material) {
   return mesh(geo, material, false);
 }
 const PROJECTILE_MODELS = {
-  golf: { front: .2, back: .2, bottom: .2, spin: 'roll',
-    build(g) { g.add(mesh(sphereGeo(.2), mat('#FAFAF6', { roughness: .4 }))); } },
+  golf: { front: .2, back: .2, bottom: .2, spin: 'roll', carry: .92, // dimples: carries well
+    build(g) { g.add(mesh(sphereGeo(.2), mat('#FAFAF6', { roughness: .4 }))); },
+    // background decoration: a little putting green with a flag
+    scenery(g) {
+      const green = mesh(roundedCylGeo(1, .04, .02), mat('#A6D88F', { roughness: .8 })); green.scale.set(1.5, 1, 1); green.position.y = .02; g.add(green);
+      const hole = mesh(cylGeo(.09, .09, .01, 20), M.dark, false); hole.position.set(.3, .045, 0); g.add(hole);
+      const pole = mesh(cylGeo(.014, .014, .9, 8), M.white); pole.position.set(.3, .47, 0); g.add(pole);
+      const fl = mesh(cached('golfFlag', () => { const s = new THREE.Shape(); s.moveTo(0, 0); s.lineTo(.3, -.1); s.lineTo(0, -.2); s.lineTo(0, 0); return new THREE.ShapeGeometry(s); }), M.flag);
+      fl.position.set(.314, .9, 0); g.add(fl);
+      g.position.set(1.5, 0, -4.5);
+    } },
   baseball: { front: .27, back: .27, bottom: .27, spin: 'roll',
     build(g) { g.add(mesh(sphereGeo(.27), mat('#F8F3E8', { roughness: .6 }))); g.add(seamCurve(.27, .014, mat('#E1514B', { roughness: .5 }))); } },
   tennis: { front: .25, back: .25, bottom: .25, spin: 'roll',
@@ -1123,7 +1132,7 @@ const PROJECTILE_MODELS = {
     } },
   puck: { front: .22, back: .22, bottom: .05, spin: 'flat',
     build(g) { g.add(mesh(roundedCylGeo(.22, .1, .025), M.dark)); } },
-  dart: { front: .38, back: .4, bottom: .07, spin: 'axis',
+  dart: { front: .38, back: .4, bottom: .07, spin: 'axis', carry: .9,
     build(g) {
       const tip = mesh(cylGeo(0, .012, .16, 10), M.steel); tip.rotation.z = -Math.PI / 2; tip.position.x = .3; g.add(tip);
       const barrel = mesh(cylGeo(.032, .026, .24, 18), mat('#9AA6B8', { roughness: .3, metalness: .5 })); barrel.rotation.z = Math.PI / 2; barrel.position.x = .1; g.add(barrel);
@@ -1135,7 +1144,7 @@ const PROJECTILE_MODELS = {
     } },
   cannonball: { front: .3, back: .3, bottom: .3, spin: 'roll',
     build(g) { g.add(mesh(sphereGeo(.3, 40, 28), mat('#34343E', { roughness: .3, metalness: .35 }))); } },
-  snowball: { front: .18, back: .18, bottom: .18, spin: 'roll',
+  snowball: { front: .18, back: .18, bottom: .18, spin: 'roll', carry: .72, // loose and draggy
     build(g) {
       const geo = cached('snowball', () => {
         const s = new THREE.SphereGeometry(.18, 28, 20), pos = s.attributes.position, v = new THREE.Vector3();
@@ -1144,7 +1153,7 @@ const PROJECTILE_MODELS = {
       });
       g.add(mesh(geo, M.snow));
     } },
-  frisbee: { front: .26, back: .26, bottom: .04, spin: 'flat',
+  frisbee: { front: .26, back: .26, bottom: .04, spin: 'flat', carry: 1.05,
     build(g) {
       const geo = cached('frisbee', () => new THREE.LatheGeometry([
         [0, .03], [.18, .028], [.24, .018], [.262, 0], [.255, -.03], [.24, -.032], [.23, -.008], [.18, .004], [0, .006],
@@ -1181,7 +1190,7 @@ const PROJECTILE_MODELS = {
       const handle = mesh(rbox(.42, .17, .1, .065), M.handle); handle.position.set(-.24, .095, 0); inner.add(handle);
       for (const x of [-.13, -.33]) { const r = mesh(cylGeo(.018, .018, .106, 12), M.rivet, false); r.rotation.x = Math.PI / 2; r.position.set(x, .095, 0); inner.add(r); }
     } },
-  arrow: { front: .82, back: .66, bottom: .07, spin: 'axis', sticky: .24,
+  arrow: { front: .82, back: .66, bottom: .07, spin: 'axis', sticky: .24, carry: 1.0,
     build(g) {
       const shaft = mesh(cylGeo(.022, .022, 1.32, 12), mat('#C99A5E', { roughness: .6 })); shaft.rotation.z = Math.PI / 2; shaft.position.x = .02; g.add(shaft);
       const tip = mesh(cylGeo(0, .055, .16, 16), M.steel); tip.rotation.z = -Math.PI / 2; tip.position.x = .74; g.add(tip);
@@ -1262,6 +1271,7 @@ function buildRound() {
   g.position.set(sx, y, 0);
   world.add(g);
   proj = { group: g, spinner, model: pm, y, x: sx, vy: 0, falling: false };
+  if (pm.scenery) { const sc = new THREE.Group(); pm.scenery(sc); world.add(sc); }
   // speed trail
   trail = new THREE.Mesh(cached('trail', () => { const c = new THREE.CylinderGeometry(1, .0, 1, 20, 1, true); c.rotateZ(-Math.PI / 2); c.translate(-.5, 0, 0); return c; }), M.trail);
   trail.visible = false; trail.renderOrder = 3;
@@ -1665,14 +1675,22 @@ function finishAnim() {
 /* =====================================================================
    TEST THROW
    Obstacles step aside and the projectile flies freely so the player can
-   see how far it would go. Free flight goes farther than through any
-   obstacles: distance = spacing x (KE / breakEnergy) x a hidden per-prompt
-   factor between 1.5 and 2.3, so it is a hint, never the exact answer.
+   see how far it would go. The distance follows the speed (faster = farther)
+   so it reads naturally; tick marks on the ground every unit (bigger ones
+   every 5) give a sense of scale. A ring and a see-through "ghost" mark
+   where it landed after the obstacles come back.
    ===================================================================== */
 let test = null, marker = null, viewExtraX = -Infinity;
 function testDistance(p) {
-  const k = 1.5 + .8 * mulberry32(hashSeed('test|' + p.subject + '|' + p.obstacle))();
-  return OBSTACLE_MODELS[p.obstacle].spacing * (kineticEnergy(p) / p.breakEnergy) * k;
+  return Math.min(30, (3 + p.mph * .13) * carryFactor(p)); // faster = farther, heavier = carries farther
+}
+// How well an object holds its speed in the air: light things (ping pong ball)
+// lose speed fast, heavy ones (cannonball, bowling ball) keep going.
+// A projectile model can override it with `carry` (arrows and frisbees glide).
+function carryFactor(p) {
+  const m = PROJECTILE_MODELS[p.projectile];
+  if (m.carry) return m.carry;
+  return clamp(.55 + .18 * Math.log10(p.mass / .003), .5, 1.25);
 }
 function startTest() {
   if (game.phase !== 'input' || game.testing || !proj) return;
@@ -1680,9 +1698,10 @@ function startTest() {
   game.testing = 'flying';
   for (const o of line) o.group.visible = false;
   if (marker) { world.remove(marker); marker = null; }
+  proj.group.visible = true;
   const D = testDistance(game.prompt);
-  test = { phase: 'windup', t: 0, D, T: clamp(1.3 + D * .05, 1.6, 2.6), startX: projStartX(), landed: false, bounces: 0 };
-  viewExtraX = test.startX + D + .6;
+  test = { phase: 'windup', t: 0, D, ease: clamp(3.8 - 2 * carryFactor(game.prompt), 1.4, 3.2), T: clamp(1.3 + D * .05, 1.6, 2.6), startX: projStartX(), landed: false, bounces: 0 };
+  viewExtraX = test.startX + Math.max(D, 11) + .8; // never zoom in tighter than a short throw
   frameCamera({ keepDirection: true, animate: true });
   validate();
 }
@@ -1698,7 +1717,7 @@ function updateTest(realDt) {
     return;
   }
   const u = Math.min(1, test.t / test.T), land = .5;
-  const x = test.startX + test.D * (1 - Math.pow(1 - u, 2.4));
+  const x = test.startX + test.D * (1 - Math.pow(1 - u, test.ease)); // light = sharp slow-down, heavy = steady
   let y;
   if (u < land) y = y0 - (y0 - floor) * Math.pow(u / land, 2);
   else {
@@ -1714,7 +1733,7 @@ function updateTest(realDt) {
   if (pm.spin === 'axis') proj.spinner.rotation.x += dx * .8;
   if (pm.spin === 'tumble') proj.spinner.rotation.z -= dx * .5;
   if (trail.visible) {
-    const speed = test.D * 2.4 * Math.pow(1 - u, 1.4) / test.T;
+    const speed = test.D * test.ease * Math.pow(1 - u, test.ease - 1) / test.T;
     trail.position.set(x - pm.back * .6, y, 0);
     const r = pm.spin === 'none' || pm.spin === 'axis' ? .07 : pm.bottom * .85;
     trail.scale.set(Math.min(3, speed * .09), r, r);
@@ -1722,22 +1741,38 @@ function updateTest(realDt) {
   if (u >= 1) {
     test.phase = 'done';
     game.testing = 'landed';
-    marker = makeMarker(x);
+    marker = makeMarker(test.startX, x);
     validate();
   }
 }
-function makeMarker(x) {
+const tickMat = mat('#1f1c15', { transparent: true, opacity: .22, roughness: 1, depthWrite: false });
+function makeMarker(fromX, x) {
   const g = new THREE.Group();
-  const base = mesh(roundedCylGeo(.14, .03, .012), M.marker); base.position.y = .015; g.add(base);
-  const pole = mesh(cylGeo(.012, .012, .62, 8), M.marker); pole.position.y = .32; g.add(pole);
-  const flagGeo = cached('flag', () => { const s = new THREE.Shape(); s.moveTo(0, 0); s.lineTo(.24, -.08); s.lineTo(0, -.16); s.lineTo(0, 0); return new THREE.ShapeGeometry(s); });
-  const fl = mesh(flagGeo, M.flag); fl.position.set(.012, .62, 0); g.add(fl);
-  g.position.set(x, 0, .55);
+  // ground ruler from the stand to the landing spot
+  for (let k = 0, d = 0; fromX + d < x - .3; k++, d += 1) {
+    const big = k % 5 === 0;
+    const t = mesh(rbox(big ? .1 : .06, .012, big ? .5 : .26, .005, 1), tickMat, false);
+    t.position.set(fromX + d, .006, .9); g.add(t);
+  }
+  const lineBar = mesh(rbox(1, .01, .03, .004, 1), tickMat, false);
+  lineBar.scale.x = Math.max(.01, x - fromX); lineBar.position.set((fromX + x) / 2, .005, .9); g.add(lineBar);
+  // landing ring
+  const ring = mesh(cached('landRing', () => new THREE.TorusGeometry(.32, .03, 8, 40).rotateX(Math.PI / 2)), M.flag, false);
+  ring.position.set(x, .02, 0); g.add(ring);
+  const tick = mesh(rbox(.12, .012, .5, .005, 1), M.flag, false); tick.position.set(x, .007, .9); g.add(tick);
   world.add(g);
   return g;
 }
+function addGhost() {
+  if (!marker) return;
+  const ghost = proj.group.clone(true);
+  ghost.traverse(c => { if (c.isMesh) { c.material = c.material.clone(); c.material.transparent = true; c.material.opacity = .35; c.material.depthWrite = false; c.castShadow = false; } });
+  ghost.scale.set(1, 1, 1);
+  marker.add(ghost);
+}
 function endTest() {
   if (game.testing !== 'landed') return;
+  addGhost();
   game.testing = null; test = null;
   const g = proj.group;
   g.position.set(projStartX(), proj.y, 0);
