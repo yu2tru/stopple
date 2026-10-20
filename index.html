@@ -1228,7 +1228,7 @@ function clearWorld() {
   line = []; pieces = []; proj = null; pedestal = null; trail = null;
   wallX = Infinity;
   puffs.forEach(p => p.m.material.dispose()); puffs = [];
-  test = null; marker = null; viewExtraX = -Infinity; game.testing = null;
+  test = null; marker = null; viewExtraX = -Infinity; game.testing = null; spent = [];
 }
 
 function makeObstacle(i, popIn) {
@@ -1252,6 +1252,16 @@ function setLineCount(n, animate = true) {
   frameCamera({ keepDirection: true, animate });
 }
 
+function makeProjectile() {
+  const pm = projModel(), y = projY(), sx = projStartX();
+  const g = new THREE.Group();
+  const spinner = new THREE.Group(); g.add(spinner);
+  pm.build(spinner);
+  g.position.set(sx, y, 0);
+  world.add(g);
+  proj = { group: g, spinner, model: pm, y, x: sx, vy: 0, falling: false };
+  return proj;
+}
 function buildRound() {
   clearWorld();
   const pm = projModel();
@@ -1264,13 +1274,7 @@ function buildRound() {
   const base = mesh(roundedCylGeo(.34, .08, .035), M.pedestalTop); base.position.y = .04; pedestal.add(base);
   pedestal.position.x = sx;
   world.add(pedestal);
-  // projectile
-  const g = new THREE.Group();
-  const spinner = new THREE.Group(); g.add(spinner);
-  pm.build(spinner);
-  g.position.set(sx, y, 0);
-  world.add(g);
-  proj = { group: g, spinner, model: pm, y, x: sx, vy: 0, falling: false };
+  makeProjectile();
   if (pm.scenery) { const sc = new THREE.Group(); pm.scenery(sc); world.add(sc); }
   // speed trail
   trail = new THREE.Mesh(cached('trail', () => { const c = new THREE.CylinderGeometry(1, .0, 1, 20, 1, true); c.rotateZ(-Math.PI / 2); c.translate(-.5, 0, 0); return c; }), M.trail);
@@ -1330,7 +1334,7 @@ function fitDistance(dir, target, box) {
   for (let i = 0; i < 22; i++) { const mid = (lo + hi) / 2; if (fits(mid)) hi = mid; else lo = mid; }
   return hi;
 }
-function frameCamera({ keepDirection = false, animate = true, reset = false } = {}) {
+function frameCamera({ keepDirection = false, animate = true, reset = false, dur = null } = {}) {
   const box = sceneBounds();
   const target = box.getCenter(new THREE.Vector3()); target.y = box.max.y * .42;
   let dir = keepDirection && !reset ? camera.position.clone().sub(controls.target).normalize() : defaultDir();
@@ -1342,7 +1346,7 @@ function frameCamera({ keepDirection = false, animate = true, reset = false } = 
     camTween = null; controls.target.copy(target); camera.position.copy(target).addScaledVector(dir, dist); controls.update(); return;
   }
   const fromDir = camera.position.clone().sub(controls.target);
-  camTween = { t: 0, dur: reset ? .7 : .45, fromT: controls.target.clone(), toT: target, fromDir: fromDir.clone().normalize(), toDir: dir, fromD: fromDir.length(), toD: dist };
+  camTween = { t: 0, dur: dur || (reset ? .7 : .45), fromT: controls.target.clone(), toT: target, fromDir: fromDir.clone().normalize(), toDir: dir, fromD: fromDir.length(), toD: dist };
 }
 function updateCamTween(dt) {
   if (!camTween) return;
@@ -1704,6 +1708,10 @@ function carryFactor(p) {
   if (m.carry) return m.carry;
   return clamp(.55 + .18 * Math.log10(p.mass / .003), .5, 1.25);
 }
+// Spent test projectiles stay where they landed (a little pile builds up if
+// you test again: the new one bumps the old ones forward).
+let spent = [];
+const POP_GAP = .07; // seconds between each obstacle popping back, and before the new projectile
 function startTest() {
   if (game.phase !== 'input' || game.testing || !proj) return;
   Sound.unlock();
@@ -1715,8 +1723,10 @@ function startTest() {
   }
   if (marker) { world.remove(marker); marker = null; }
   const D = testDistance(game.prompt);
-  test = { phase: 'windup', t: 0, D, ease: clamp(3.8 - 2 * carryFactor(game.prompt), 1.4, 3.2), T: clamp(1.3 + D * .05, 1.6, 2.6), startX: projStartX(), landed: false, bounces: 0 };
-  marker = makeMarker(test.startX, test.startX + D);
+  test = { phase: 'windup', t: 0, D, ease: clamp(3.8 - 2 * carryFactor(game.prompt), 1.4, 3.2), T: clamp(1.3 + D * .05, 1.6, 2.6), startX: projStartX(), landed: false, bounces: 0, blockX: Infinity };
+  // the nearest spent projectile in the way (if any) stops this one with a bump
+  for (const s of spent) test.blockX = Math.min(test.blockX, s.x - (proj.model.front + proj.model.back) * .92);
+  marker = makeMarker(test.startX);
   validate();
 }
 // zoom out only as far as needed to keep the projectile in view (never zooms in)
@@ -1736,7 +1746,16 @@ function followCamera(x, dt) {
   controls.maxDistance = Math.max(controls.maxDistance, d * 1.3);
   camTween = null;
 }
+function updateSpent(dt) {
+  for (const s of spent) {
+    if (s.vx <= .01) continue;
+    s.x += s.vx * dt; s.vx *= Math.exp(-dt * 5);
+    s.g.position.x = s.x;
+    if (s.model.spin === 'roll') s.spinner.rotation.z -= s.vx * dt / s.model.front;
+  }
+}
 function updateTest(realDt) {
+  updateSpent(realDt);
   if (!test || test.phase === 'done') return;
   const pm = proj.model, g = proj.group, y0 = proj.y, floor = pm.bottom;
   test.t += realDt;
@@ -1750,13 +1769,22 @@ function updateTest(realDt) {
     return;
   }
   const u = Math.min(1, test.t / test.T), land = .5;
-  const x = test.startX + test.D * (1 - Math.pow(1 - u, test.ease)); // light = sharp slow-down, heavy = steady
+  let x = test.startX + test.D * (1 - Math.pow(1 - u, test.ease)); // light = sharp slow-down, heavy = steady
+  const speed = test.D * test.ease * Math.pow(1 - u, test.ease - 1) / test.T;
+  if (x > test.blockX) { // bumped into an earlier test projectile
+    x = test.blockX;
+    if (!test.bumped) {
+      test.bumped = true; Sound.thud(); trail.visible = false;
+      const hit = spent.reduce((a, s) => (!a || s.x < a.x ? s : a), null);
+      if (hit) hit.vx = Math.min(1.6, .25 + speed * .12);
+    }
+  }
   let y;
   if (u < land) y = y0 - (y0 - floor) * Math.pow(u / land, 2);
   else {
     const b = (u - land) / (1 - land);
     y = floor + Math.abs(Math.sin(b * Math.PI * 2)) * .22 * Math.pow(1 - b, 2);
-    if (!test.landed) { test.landed = true; Sound.thud(); trail.visible = false; }
+    if (!test.landed) { test.landed = true; if (!test.bumped) Sound.thud(); trail.visible = false; }
     if (b > .5 && test.bounces === 0) { test.bounces = 1; Sound.hit('soft'); }
   }
   const dx = x - test.lastX; test.lastX = x;
@@ -1768,7 +1796,6 @@ function updateTest(realDt) {
   if (pm.spin === 'axis') proj.spinner.rotation.x += dx * .8;
   if (pm.spin === 'tumble') proj.spinner.rotation.z -= dx * .5;
   if (trail.visible) {
-    const speed = test.D * test.ease * Math.pow(1 - u, test.ease - 1) / test.T;
     trail.position.set(x - pm.back * .6, y, 0);
     const r = pm.spin === 'none' || pm.spin === 'axis' ? .07 : pm.bottom * .85;
     trail.scale.set(Math.min(3, speed * .09), r, r);
@@ -1776,30 +1803,24 @@ function updateTest(realDt) {
   if (u >= 1) {
     test.phase = 'stopped';
     game.testing = 'landed';
-    marker.userData.ring.forEach(r => { r.visible = true; r.userData.t = 0; });
+    for (const r of marker.userData.ring) { r.position.x = x; r.visible = true; r.userData.t = 0; }
     validate();
   }
 }
-// The ruler: ticks every unit (bigger every 5) that pop up as the projectile
-// passes over them, a line that grows behind it, and a ring where it stops.
+// The ruler: a line that grows with the projectile, and fixed-size segments
+// (one tick every unit, a bigger one every 5) that pop up as the line reaches
+// them. A ring pops in where it stops.
 const tickMat = mat('#1f1c15', { transparent: true, opacity: .22, roughness: 1, depthWrite: false });
-function makeMarker(fromX, toX) {
+function makeMarker(fromX) {
   const g = new THREE.Group();
   const tm = tickMat.clone(), rm = M.flag.clone(); rm.transparent = true;
-  const ticks = [];
-  for (let k = 0, d = 0; fromX + d < toX - .3; k++, d += 1) {
-    const big = k % 5 === 0;
-    const t = mesh(rbox(big ? .1 : .06, .012, big ? .5 : .26, .005, 1), tm, false);
-    t.position.set(fromX + d, .006, .9); t.visible = false; t.userData.t = -1;
-    g.add(t); ticks.push(t);
-  }
   const bar = mesh(rbox(1, .01, .03, .004, 1), tm, false);
   bar.position.set(fromX, .005, .9); bar.scale.x = .01; g.add(bar);
   const ring = mesh(cached('landRing', () => new THREE.TorusGeometry(.32, .03, 8, 40).rotateX(Math.PI / 2)), rm, false);
-  ring.position.set(toX, .02, 0);
-  const end = mesh(rbox(.12, .012, .5, .005, 1), rm, false); end.position.set(toX, .007, .9);
+  ring.position.set(fromX, .02, 0);
+  const end = mesh(rbox(.12, .012, .5, .005, 1), rm, false); end.position.set(fromX, .007, .9);
   for (const r of [ring, end]) { r.visible = false; r.scale.setScalar(.01); g.add(r); }
-  g.userData = { fromX, ticks, bar, ring: [ring, end], tm, rm };
+  g.userData = { fromX, ticks: [], next: 0, bar, ring: [ring, end], tm, rm };
   world.add(g);
   return g;
 }
@@ -1807,51 +1828,69 @@ function updateMarker(dt) {
   if (!marker) return;
   const U = marker.userData;
   const x = test && test.x != null ? test.x : U.fromX;
-  for (const t of U.ticks) {
-    if (t.userData.t < 0 && t.position.x <= x) { t.userData.t = 0; t.visible = true; }
-    if (t.userData.t >= 0 && t.userData.t < 1) {
-      t.userData.t = Math.min(1, t.userData.t + dt / .25);
-      t.scale.set(1, 1, Math.max(.01, easeOutBack(t.userData.t)));
-    }
+  const len = Math.max(0, x - U.fromX);
+  U.bar.scale.x = Math.max(.01, len); U.bar.position.x = U.fromX + len / 2;
+  while (U.next <= len) { // the line just reached the next segment mark
+    const big = U.next % 5 === 0;
+    const t = mesh(rbox(big ? .1 : .06, .012, big ? .5 : .26, .005, 1), U.tm, false);
+    t.position.set(U.fromX + U.next, .006, .9); t.scale.z = .01; t.userData.t = 0;
+    marker.add(t); U.ticks.push(t); U.next += 1;
   }
-  const len = Math.max(.01, x - U.fromX);
-  U.bar.scale.x = len; U.bar.position.x = U.fromX + len / 2;
+  for (const t of U.ticks) if (t.userData.t < 1) {
+    t.userData.t = Math.min(1, t.userData.t + dt / .25);
+    t.scale.z = Math.max(.01, easeOutBack(t.userData.t));
+  }
   for (const r of U.ring) if (r.visible && r.userData.t < 1) {
     r.userData.t = Math.min(1, r.userData.t + dt / .3);
     r.scale.setScalar(Math.max(.01, easeOutBack(r.userData.t)));
   }
 }
-// Bring back: ruler fades and the camera zooms in, then the obstacles pop back.
+// Bring back: the test projectile stays where it landed. The ruler fades,
+// the camera glides back in, the obstacles pop up one by one from the stand
+// outward, and one beat after the last one a fresh projectile pops onto the stand.
 function endTest() {
   if (game.testing !== 'landed') return;
   game.testing = 'returning';
-  test.phase = 'returning'; test.t = 0; test.popped = false;
-  proj.group.position.set(projStartX(), proj.y, 0);
-  proj.spinner.rotation.set(0, 0, 0);
-  proj.group.scale.setScalar(.01);
+  test.phase = 'returning'; test.t = 0; test.popped = 0; test.newProj = false;
+  const old = proj;
+  spent.push({ g: old.group, spinner: old.spinner, model: old.model, x: old.group.position.x, vx: 0 });
+  makeProjectile();
+  proj.group.visible = false;
+  test.total = (line.length + 1) * POP_GAP;
+  for (const o of line) { o.shrink = null; o.group.visible = false; }
   viewExtraX = -Infinity;
-  frameCamera({ keepDirection: true, animate: true });
-  Sound.tick();
+  frameCamera({ keepDirection: true, animate: true, dur: Math.max(1.1, test.total + .5) });
   validate();
 }
 function updateReturn(dt) {
   const t = test.t;
   if (marker) {
     updateMarker(dt);
-    const f = Math.max(0, 1 - t / .4);
+    const f = Math.max(0, 1 - t / .5);
     marker.userData.tm.opacity = .22 * f;
     marker.userData.rm.opacity = f;
+    if (f <= 0) { world.remove(marker); marker.userData.tm.dispose(); marker.userData.rm.dispose(); marker = null; }
   }
-  proj.group.scale.setScalar(Math.max(.01, easeOutBack(Math.min(1, t / .3))));
-  if (t >= .5 && !test.popped) {
-    test.popped = true;
-    for (const o of line) { o.shrink = null; o.group.visible = true; if (!REDUCED_MOTION) { o.pop = 0; o.inner.scale.setScalar(.01); } else o.inner.scale.setScalar(1); }
+  // obstacles pop up nearest-first, POP_GAP apart
+  while (test.popped < line.length && t >= test.popped * POP_GAP) {
+    const o = line[test.popped++];
+    o.group.visible = true;
+    if (!REDUCED_MOTION) { o.pop = 0; o.inner.scale.setScalar(.01); } else o.inner.scale.setScalar(1);
+    if (test.popped % 2 === 1 || line.length < 8) Sound.tick();
   }
-  if (t >= .85) {
-    if (marker) { world.remove(marker); marker.userData.tm.dispose(); marker.userData.rm.dispose(); marker = null; }
-    proj.group.scale.setScalar(1);
-    test = null; game.testing = null;
-    validate();
+  // then, one gap after the last obstacle, the new projectile
+  if (!test.newProj && t >= line.length * POP_GAP) {
+    test.newProj = true; test.projT = 0;
+    proj.group.visible = true; proj.group.scale.setScalar(.01);
+  }
+  if (test.newProj) {
+    test.projT += dt;
+    proj.group.scale.setScalar(Math.max(.01, easeOutBack(Math.min(1, test.projT / .3))));
+    if (test.projT >= .3 && !marker) {
+      proj.group.scale.setScalar(1);
+      test = null; game.testing = null;
+      validate();
+    }
   }
 }
 $('testBtn').addEventListener('click', () => { if (game.testing === 'landed') endTest(); else if (!game.testing) startTest(); });
