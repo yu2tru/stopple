@@ -109,6 +109,8 @@
   .btn:disabled { opacity: .25; cursor: default; }
   .row { display: flex; gap: 10px; }
   .row > * { flex: 1; }
+  .actions .chip { flex: 0 0 38%; height: 58px; justify-content: center; font-size: 16px; }
+  .chip:disabled { opacity: .4; cursor: default; }
 
   /* Bottom panel */
   .panel { padding: 6px 0 calc(16px + env(safe-area-inset-bottom)); }
@@ -266,7 +268,10 @@
         <input id="guess" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="2" placeholder="?" aria-label="Number of obstacles (1 to 40)">
         <button class="step" id="plus" aria-label="One more">+</button>
       </div>
-      <button class="btn" id="submit" disabled>Launch</button>
+      <div class="row actions">
+        <button class="chip" id="testBtn">Test throw</button>
+        <button class="btn" id="submit" disabled>Launch</button>
+      </div>
     </div>
 
     <div id="resultView" hidden>
@@ -301,7 +306,7 @@
     <h2 id="helpTitle">How to play</h2>
     <ol class="steps">
       <li><span class="num">1</span><span>Something is flying at a <b>line of obstacles</b>, and you pick how many go in the line.</span></li>
-      <li><span class="num">2</span><span>Aim for it to break through <b>all but one</b>, so exactly one is left standing.</span></li>
+      <li><span class="num">2</span><span>Aim for it to break through <b>all but one</b>. Tap <b>Test throw</b> to see how far it flies with nothing in the way.</span></li>
       <li><span class="num">3</span><span>Hit <b>Launch</b> and watch: exact is 100 points, too many costs a little, too few scores zero.</span></li>
     </ol>
     <div class="legend">
@@ -370,6 +375,12 @@ const PROMPTS = [
     obstacle: 'hay',        name: 'Hay bale',                    plural: 'hay bales',              short: 'hay bale',     breakEnergy: 120 },
   { subject: 'A snowball',       projectile: 'snowball', mass: 0.2,    mph: 45,
     obstacle: 'snowman',    name: 'Snowman',                     plural: 'snowmen',                short: 'snowman',      shortPlural: 'snowmen', breakEnergy: 6 },
+  { subject: 'A frisbee',        projectile: 'frisbee',  mass: 0.175,  mph: 40,
+    obstacle: 'cups',       name: 'Paper cup pyramid',           plural: 'paper cup pyramids',     short: 'cup pyramid',  breakEnergy: 3.0 },
+  { subject: 'A brick',          projectile: 'brick',    mass: 2.5,    mph: 30,
+    obstacle: 'ice',        name: 'Block of ice',                plural: 'blocks of ice',          short: 'ice block',    breakEnergy: 30 },
+  { subject: 'A frozen turkey',  projectile: 'turkey',   mass: 5.0,    mph: 25,
+    obstacle: 'pumpkin',    name: 'Pumpkin',                     plural: 'pumpkins',               short: 'pumpkin',      breakEnergy: 40 },
 ];
 
 /* =====================================================================
@@ -544,6 +555,15 @@ const Sound = (() => {
             for (let i = 0; i < 6; i++) noise(t + i * .025, .04, { type: 'bandpass', freq: rand(1500, 3000), q: 2, gain: .1 });
             tone(t, 100, .12, { gain: .15, freqEnd: 55 });
             break;
+          case 'cups': // hollow plastic clatter
+            for (let i = 0; i < 6; i++) tone(t + i * .03 + Math.random() * .02, rand(500, 900), .07, { type: 'triangle', gain: .12 });
+            noise(t, .08, { type: 'bandpass', freq: 1200, q: 1.5, gain: .2 });
+            break;
+          case 'ice': // crunchy crack with a cold ring
+            noise(t, .14, { type: 'bandpass', freq: 2200 * k, q: 1.2, gain: .4 });
+            tone(t, 170 * k, .14, { gain: .22, freqEnd: 80 });
+            for (let i = 0; i < 3; i++) tone(t + i * .03, rand(1400, 2600), .16, { gain: .04 });
+            break;
           case 'melon':
             tone(t, 95 * k, .22, { gain: .38, freqEnd: 48 });
             noise(t + .02, .24, { type: 'lowpass', freq: 900 * k, gain: .3 });
@@ -698,7 +718,16 @@ Object.assign(M, {
   carrot: mat('#F28A3B', { roughness: .55 }),
   twig: mat('#8A5A35', { roughness: .8 }),
   scarf: mat('#EE6A5B', { roughness: .85 }),
+  ice: mat('#CDEEFF', { transparent: true, opacity: .62, roughness: .06 }),
+  iceFrost: mat('#F4FBFF', { roughness: .9 }),
+  pumpkin: mat('#F29A3E', { roughness: .55 }),
+  pumpkinStem: mat('#6E8B3D', { roughness: .7 }),
+  pulp: mat('#F7C46A', { roughness: .7 }),
+  pumpkinSeed: mat('#FFF3D6', { roughness: .6 }),
+  marker: mat('#1f1c15', { roughness: .5 }),
+  flag: mat('#EE6A5B', { roughness: .6, side: THREE.DoubleSide }),
 });
+const CUP_COLORS = ['#F2707A', '#7FB2F0', '#8ED39A', '#F6C445'];
 M.hay = new THREE.MeshStandardMaterial({
   roughness: .95,
   map: canvasTexture(256, 256, (g, w, h) => {
@@ -773,17 +802,27 @@ const OBSTACLE_MODELS = {
       const pipe = mesh(rbox(.06, 1.04, 1.3, .03, 2), M.pillowPiping); pipe.position.y = .53; g.add(pipe);
     },
     // the case bursts and flops down empty while the stuffing puffs out
+    // the case tears into two floppy halves, a big cloud of stuffing poofs out
+    // and feathers drift down slowly
+    puff: { n: 7, size: .6, spread: 1.4, life: 1.6, opacity: .8 },
     breakFx(o, f) {
-      const c = new THREE.Group();
-      c.add(mesh(rbox(.14, .96, 1.24, .06, 3), M.pillow));
-      const pp = mesh(rbox(.03, 1.0, 1.28, .015, 1), M.pillowPiping); c.add(pp);
-      c.position.set(o.group.position.x, .53, 0);
-      addPiece(c, { dims: [.14, .96, 1.24], v: V(rand(1.8, 2.6) * f, 1.4, rand(-.4, .4)), av: V(rand(-1.5, 1.5), rand(-1.5, 1.5), -rand(3, 5)), drag: 1.1, grav: .7 });
+      const x = o.group.position.x;
+      for (const side of [-1, 1]) {
+        const c = new THREE.Group();
+        c.add(mesh(rbox(.12, .96, .6, .05, 3), M.pillow));
+        const pp = mesh(rbox(.03, 1.0, .62, .015, 1), M.pillowPiping); c.add(pp);
+        c.position.set(x, .53, side * .32);
+        addPiece(c, { dims: [.12, .96, .6], v: V(rand(1.4, 2.4) * f, rand(1.2, 2.2), side * rand(.8, 1.6)), av: V(side * rand(2, 4), rand(-2, 2), -rand(2, 4)), drag: 1.2, grav: .7 });
+      }
     },
-    pieces: [{ geo: 'ball', mat: 'fluff', n: 22, size: [.07, .17], drag: 3.2, grav: .3 }],
+    pieces: [
+      { geo: 'ball', mat: 'fluff', n: 26, size: [.07, .18], drag: 3.6, grav: .25 },
+      { geo: 'flat', mat: 'fluff', n: 10, size: [.18, .26], shape: [1, .05, .3], drag: 5, grav: .12 },
+    ],
   },
   drywall: {
     depth: .12, width: 1.3, height: 1.5, spacing: .5, hitY: .78, sound: 'wood', crack: 'dark',
+    puff: { n: 3, size: .4, color: '#EFE9DB', life: 1.1, opacity: .6 },
     build(g) {
       const s = mesh(rbox(.12, 1.5, 1.3, .03), M.drywall); s.position.y = .75; g.add(s);
     },
@@ -941,6 +980,7 @@ const OBSTACLE_MODELS = {
   },
   hay: {
     depth: .7, width: 1.1, height: .7, spacing: .84, hitY: .36, sound: 'straw', soft: true,
+    puff: { n: 3, size: .4, color: '#F0D88E', life: 1, opacity: .5 },
     build(g) {
       const b = mesh(rbox(.7, .7, 1.1, .09), M.hay); b.position.y = .35; g.add(b);
       for (const z of [-.28, .28]) { const t = mesh(rbox(.72, .72, .035, .09, 2), M.twine); t.position.set(0, .35, z); g.add(t); }
@@ -957,8 +997,74 @@ const OBSTACLE_MODELS = {
     },
     pieces: [{ geo: 'stick', mat: 'straw', n: 22, size: [.24, .4], shape: [.06, 1, .06], drag: .9, grav: .6 }],
   },
+  cups: {
+    depth: .22, width: .7, height: .66, spacing: .5, hitY: .33, sound: 'cups', soft: true,
+    build(g, i) {
+      const cm = mat(CUP_COLORS[i % CUP_COLORS.length], { roughness: .5 });
+      cupLayout().forEach(([y, z]) => {
+        const c = new THREE.Group();
+        c.add(mesh(cylGeo(.1, .072, .22, 22), cm));
+        const rim = mesh(cached('cupRim', () => new THREE.TorusGeometry(.1, .008, 6, 22).rotateX(Math.PI / 2)), M.white, false); rim.position.y = .11; c.add(rim);
+        c.position.set(0, y, z); g.add(c);
+      });
+    },
+    // the pyramid gets knocked over and every cup tumbles away
+    breakFx(o, f) {
+      const x = o.group.position.x;
+      o.inner.children.forEach(c => {
+        const k = c.clone(); k.visible = true; k.position.x += x;
+        addPiece(k, { dims: [.2, .22, .19], v: V(rand(1, 2.4) * f, rand(1, 2.6), k.position.z * rand(3, 6) + rand(-.5, .5)), av: V(rand(-8, 8), rand(-4, 4), rand(-8, 8)) });
+      });
+    },
+    pieces: [],
+  },
+  ice: {
+    depth: .5, width: .72, height: .72, spacing: .66, hitY: .36, sound: 'ice', crack: 'light',
+    puff: { n: 3, size: .4, color: '#EAF8FF', life: 1, opacity: .6 },
+    build(g) {
+      const b = mesh(rbox(.5, .7, .7, .07), M.ice); b.position.y = .35; b.renderOrder = 2; g.add(b);
+      const core = mesh(rbox(.3, .46, .46, .1), M.iceFrost, false); core.position.y = .35; g.add(core);
+    },
+    // cracks into eight chunky cubes plus little shards
+    breakFx(o, f) {
+      const x = o.group.position.x;
+      for (const dx of [-1, 1]) for (const dy of [-1, 1]) for (const dz of [-1, 1]) {
+        const c = new THREE.Group();
+        c.add(mesh(rbox(.24, .34, .34, .05), M.ice));
+        const fr = mesh(rbox(.13, .2, .2, .06), M.iceFrost, false); c.add(fr);
+        c.position.set(x + dx * .125, .35 + dy * .175, dz * .175);
+        addPiece(c, { dims: [.24, .34, .34], v: V(rand(1, 2.2) * f + dx * .5, rand(.8, 2) + dy * .8, dz * rand(.8, 1.8)), av: V(rand(-6, 6), rand(-6, 6), rand(-6, 6)) });
+      }
+    },
+    pieces: [{ geo: 'shard', mat: 'glassShard', n: 10, size: [.1, .2], shape: [1, 1.2, .5] }],
+  },
+  pumpkin: {
+    depth: .78, width: .78, height: .62, spacing: .9, hitY: .3, sound: 'melon', soft: true,
+    build(g) {
+      const ribs = pumpkinRibs();
+      ribs.forEach(r => g.add(r));
+      const core = mesh(sphereGeo(.3), M.pumpkin); core.scale.y = .8; core.position.y = .26; g.add(core);
+      const stem = mesh(cylGeo(.03, .045, .16, 10), M.pumpkinStem); stem.position.set(.02, .58, 0); stem.rotation.z = -.25; g.add(stem);
+    },
+    // bursts open: the ribs fly off as wedges with pulp and seeds
+    breakFx(o, f) {
+      const x = o.group.position.x;
+      pumpkinRibs().forEach(r => {
+        const dir = new THREE.Vector3(r.position.x, 0, r.position.z).normalize();
+        r.position.x += x;
+        addPiece(r, { dims: [.3, .5, .26], v: V(dir.x * 1.8 + rand(1, 2) * f, rand(1.4, 2.6), dir.z * rand(1.4, 2.4)), av: V(rand(-6, 6), rand(-6, 6), rand(-6, 6)) });
+      });
+      const st = mesh(cylGeo(.03, .045, .16, 10), M.pumpkinStem); st.position.set(x, .58, 0);
+      addPiece(st, { dims: [.07, .16, .07], v: V(rand(1, 2) * f, 3, rand(-.5, .5)), av: V(rand(-8, 8), 0, rand(-8, 8)) });
+    },
+    pieces: [
+      { geo: 'dodec', mat: 'pulp', n: 6, size: [.1, .18] },
+      { geo: 'flat', mat: 'pumpkinSeed', n: 8, size: [.05, .07], shape: [1, .25, .6] },
+    ],
+  },
   snowman: {
     depth: .72, width: .72, height: 1.45, spacing: .86, hitY: .86, sound: 'snow', soft: true,
+    puff: { n: 4, size: .45, life: 1.1, opacity: .7 },
     build(g) {
       const parts = snowmanParts();
       g.add(parts.bottom, parts.middle, parts.head);
@@ -1038,6 +1144,29 @@ const PROJECTILE_MODELS = {
       });
       g.add(mesh(geo, M.snow));
     } },
+  frisbee: { front: .26, back: .26, bottom: .04, spin: 'flat',
+    build(g) {
+      const geo = cached('frisbee', () => new THREE.LatheGeometry([
+        [0, .03], [.18, .028], [.24, .018], [.262, 0], [.255, -.03], [.24, -.032], [.23, -.008], [.18, .004], [0, .006],
+      ].map(([a, b]) => new THREE.Vector2(a, b)), 48));
+      g.add(mesh(geo, mat('#7FD1C2', { roughness: .4, side: THREE.DoubleSide })));
+      const ring = mesh(cached('frisbeeRing', () => new THREE.TorusGeometry(.13, .008, 6, 40).rotateX(Math.PI / 2)), M.white, false); ring.position.y = .031; g.add(ring);
+    } },
+  brick: { front: .21, back: .21, bottom: .1, spin: 'tumble',
+    build(g) {
+      g.add(mesh(rbox(.42, .2, .2, .035), mat('#D9744F', { roughness: .85 })));
+      for (const x of [-.12, 0, .12]) { const h = mesh(cylGeo(.032, .032, .202, 14), mat('#A9533A', { roughness: .9 }), false); h.position.x = x; g.add(h); }
+    } },
+  turkey: { front: .36, back: .36, bottom: .25, spin: 'tumble',
+    build(g) {
+      const skin = mat('#F0CFAE', { roughness: .5 });
+      const body = mesh(sphereGeo(.5), skin); body.scale.set(.72, .5, .58); g.add(body);
+      for (const z of [-1, 1]) {
+        const leg = mesh(cylGeo(.05, .085, .26, 16), skin); leg.position.set(-.26, .1, z * .15); leg.rotation.z = 1.0; g.add(leg);
+        const bone = mesh(sphereGeo(.035, 12, 10), M.white); bone.position.set(-.38, .19, z * .15); g.add(bone);
+      }
+      const frost = mesh(sphereGeo(.5), mat('#FFFFFF', { transparent: true, opacity: .25, roughness: .3 }), false); frost.scale.set(.74, .52, .6); g.add(frost);
+    } },
   knife: { front: .64, back: .68, bottom: .09, spin: 'none', sticky: .2,
     build(g) {
       const geo = cached('knifeBlade', () => {
@@ -1089,6 +1218,8 @@ function clearWorld() {
   while (world.children.length) world.remove(world.children[0]);
   line = []; pieces = []; proj = null; pedestal = null; trail = null;
   wallX = Infinity;
+  puffs.forEach(p => p.m.material.dispose()); puffs = [];
+  test = null; marker = null; viewExtraX = -Infinity; game.testing = null;
 }
 
 function makeObstacle(i, popIn) {
@@ -1169,7 +1300,7 @@ function sceneBounds() {
   const n = Math.max(line.length, 1);
   return new THREE.Box3(
     new THREE.Vector3(projStartX() - .5, 0, -def.width / 2),
-    new THREE.Vector3(obstX(n - 1) + def.depth / 2 + .1, Math.max(def.height, projY() + .4), def.width / 2));
+    new THREE.Vector3(Math.max(obstX(n - 1) + def.depth / 2 + .1, viewExtraX), Math.max(def.height, projY() + .4), def.width / 2));
 }
 function fitDistance(dir, target, box) {
   const corners = [];
@@ -1285,10 +1416,45 @@ function snowmanParts() {
   const scarf = mesh(cached('scarf', () => new THREE.TorusGeometry(.17, .05, 10, 28)), M.scarf); scarf.rotation.x = Math.PI / 2; scarf.position.y = -.16; head.add(scarf);
   return { bottom, middle, head };
 }
+function cupLayout() { // a 3-2-1 pyramid of cups, [y, z]
+  return [[.11, -.22], [.11, 0], [.11, .22], [.33, -.11], [.33, .11], [.55, 0]];
+}
+function pumpkinRibs() {
+  const out = [];
+  for (let k = 0; k < 8; k++) {
+    const a = (k / 8) * Math.PI * 2;
+    const r = mesh(sphereGeo(.5, 24, 18), M.pumpkin); r.scale.set(.3, .58, .26);
+    r.position.set(Math.cos(a) * .22, .29, Math.sin(a) * .22); r.rotation.y = -a;
+    out.push(r);
+  }
+  return out;
+}
+// soft expanding clouds (stuffing, dust, snow, frost)
+let puffs = [];
+function puff(x, y, z, { n = 4, size = .4, spread = 1, life = 1, opacity = .6, color = '#FFFFFF' } = {}) {
+  for (let k = 0; k < n; k++) {
+    const m = new THREE.Mesh(sphereGeo(.5, 14, 10), new THREE.MeshStandardMaterial({ color, roughness: 1, transparent: true, opacity, depthWrite: false }));
+    m.position.set(x + rand(-.2, .2), y + rand(-.2, .2), z + rand(-.35, .35));
+    m.scale.setScalar(.01);
+    puffs.push({ m, t: 0, life: life * rand(.8, 1.2), s: size * rand(.7, 1.3), o: opacity, v: V(rand(.2, 1.2), rand(.2, .8), rand(-.7, .7)).multiplyScalar(spread) });
+    world.add(m);
+  }
+}
+function updatePuffs(dt) {
+  for (const p of puffs) {
+    p.t += dt; const u = Math.min(1, p.t / p.life);
+    p.m.scale.setScalar(p.s * (.3 + .7 * easeOutCubic(u)));
+    p.m.material.opacity = p.o * Math.pow(1 - u, 1.6);
+    p.m.position.addScaledVector(p.v, dt * (1 - u));
+    if (u >= 1) { world.remove(p.m); p.m.material.dispose(); }
+  }
+  puffs = puffs.filter(p => p.t < p.life);
+}
 function spawnPieces(o, impactSpeed) {
   const def = obstModel();
   const f = clamp(impactSpeed / 12, .5, 1.4);
   if (def.breakFx) def.breakFx(o, f);
+  if (def.puff) puff(o.group.position.x, projY(), 0, def.puff);
   const total = def.pieces.reduce((s, p) => s + p.n, 0);
   if (!total) return;
   const budget = clamp(Math.round(260 / Math.max(line.length, 1)), 5, total);
@@ -1461,6 +1627,7 @@ function updateAnim(realDt) {
       if (pm.spin === 'roll') proj.spinner.rotation.z -= speed * dt / pm.front * .6;
       if (pm.spin === 'flat') proj.spinner.rotation.y += speed * dt * 2;
       if (pm.spin === 'axis') proj.spinner.rotation.x += speed * dt * .8;
+      if (pm.spin === 'tumble') proj.spinner.rotation.z -= speed * dt * .5;
       trail.position.set(proj.x - pm.back * .6, proj.y, 0);
       const r = pm.spin === 'none' || pm.spin === 'axis' ? .07 : pm.bottom * .85;
       trail.scale.set(Math.min(3.2, speed * .09 * Math.max(timeScale, .5)), r, r);
@@ -1494,6 +1661,93 @@ function finishAnim() {
   if (trail) trail.visible = false;
   showResult();
 }
+
+/* =====================================================================
+   TEST THROW
+   Obstacles step aside and the projectile flies freely so the player can
+   see how far it would go. Free flight goes farther than through any
+   obstacles: distance = spacing x (KE / breakEnergy) x a hidden per-prompt
+   factor between 1.5 and 2.3, so it is a hint, never the exact answer.
+   ===================================================================== */
+let test = null, marker = null, viewExtraX = -Infinity;
+function testDistance(p) {
+  const k = 1.5 + .8 * mulberry32(hashSeed('test|' + p.subject + '|' + p.obstacle))();
+  return OBSTACLE_MODELS[p.obstacle].spacing * (kineticEnergy(p) / p.breakEnergy) * k;
+}
+function startTest() {
+  if (game.phase !== 'input' || game.testing || !proj) return;
+  Sound.unlock();
+  game.testing = 'flying';
+  for (const o of line) o.group.visible = false;
+  if (marker) { world.remove(marker); marker = null; }
+  const D = testDistance(game.prompt);
+  test = { phase: 'windup', t: 0, D, T: clamp(1.3 + D * .05, 1.6, 2.6), startX: projStartX(), landed: false, bounces: 0 };
+  viewExtraX = test.startX + D + .6;
+  frameCamera({ keepDirection: true, animate: true });
+  validate();
+}
+function updateTest(realDt) {
+  if (!test || test.phase === 'done') return;
+  const pm = proj.model, g = proj.group, y0 = proj.y, floor = pm.bottom;
+  test.t += realDt;
+  if (test.phase === 'windup') {
+    const k = Math.min(1, test.t / .32);
+    g.position.set(test.startX - .42 * easeOutCubic(k), y0, 0);
+    g.scale.set(1 - .1 * k, 1 + .05 * k, 1 + .05 * k);
+    if (k >= 1) { test.phase = 'fly'; test.t = 0; g.scale.set(1, 1, 1); Sound.whoosh(); trail.visible = true; test.lastX = test.startX; }
+    return;
+  }
+  const u = Math.min(1, test.t / test.T), land = .5;
+  const x = test.startX + test.D * (1 - Math.pow(1 - u, 2.4));
+  let y;
+  if (u < land) y = y0 - (y0 - floor) * Math.pow(u / land, 2);
+  else {
+    const b = (u - land) / (1 - land);
+    y = floor + Math.abs(Math.sin(b * Math.PI * 2)) * .22 * Math.pow(1 - b, 2);
+    if (!test.landed) { test.landed = true; Sound.thud(); trail.visible = false; }
+    if (b > .5 && test.bounces === 0) { test.bounces = 1; Sound.hit('soft'); }
+  }
+  const dx = x - test.lastX; test.lastX = x;
+  g.position.set(x, y, 0);
+  if (pm.spin === 'roll') proj.spinner.rotation.z -= dx / pm.front * .6;
+  if (pm.spin === 'flat') proj.spinner.rotation.y += dx * 2;
+  if (pm.spin === 'axis') proj.spinner.rotation.x += dx * .8;
+  if (pm.spin === 'tumble') proj.spinner.rotation.z -= dx * .5;
+  if (trail.visible) {
+    const speed = test.D * 2.4 * Math.pow(1 - u, 1.4) / test.T;
+    trail.position.set(x - pm.back * .6, y, 0);
+    const r = pm.spin === 'none' || pm.spin === 'axis' ? .07 : pm.bottom * .85;
+    trail.scale.set(Math.min(3, speed * .09), r, r);
+  }
+  if (u >= 1) {
+    test.phase = 'done';
+    game.testing = 'landed';
+    marker = makeMarker(x);
+    validate();
+  }
+}
+function makeMarker(x) {
+  const g = new THREE.Group();
+  const base = mesh(roundedCylGeo(.14, .03, .012), M.marker); base.position.y = .015; g.add(base);
+  const pole = mesh(cylGeo(.012, .012, .62, 8), M.marker); pole.position.y = .32; g.add(pole);
+  const flagGeo = cached('flag', () => { const s = new THREE.Shape(); s.moveTo(0, 0); s.lineTo(.24, -.08); s.lineTo(0, -.16); s.lineTo(0, 0); return new THREE.ShapeGeometry(s); });
+  const fl = mesh(flagGeo, M.flag); fl.position.set(.012, .62, 0); g.add(fl);
+  g.position.set(x, 0, .55);
+  world.add(g);
+  return g;
+}
+function endTest() {
+  if (game.testing !== 'landed') return;
+  game.testing = null; test = null;
+  const g = proj.group;
+  g.position.set(projStartX(), proj.y, 0);
+  proj.spinner.rotation.set(0, 0, 0);
+  for (const o of line) { o.group.visible = true; if (!REDUCED_MOTION) { o.pop = 0; o.inner.scale.setScalar(.01); } }
+  Sound.tick();
+  frameCamera({ keepDirection: true, animate: true });
+  validate();
+}
+$('testBtn').addEventListener('click', () => { if (game.testing === 'landed') endTest(); else startTest(); });
 
 /* =====================================================================
    CONFETTI (2D overlay)
@@ -1533,6 +1787,7 @@ function updateConfetti(dt) {
    ===================================================================== */
 const game = {
   mode: 'daily',   // 'daily' | 'practice'
+  testing: null,   // null | 'flying' | 'landed' (test throw state)
   round: 0,
   prompt: PROMPTS[0],
   promptIndex: 0,
@@ -1546,7 +1801,7 @@ const el = {
   inputView: $('inputView'), resultView: $('resultView'), doneView: $('doneView'),
   resTitle: $('resTitle'), resSub: $('resSub'), resPts: $('resPts'), quip: $('quip'), next: $('next'),
   doneTotal: $('doneTotal'), doneLabel: $('doneLabel'),
-  sound: $('btnSound'), toast: $('toast'),
+  sound: $('btnSound'), toast: $('toast'), test: $('testBtn'),
 };
 el.pno.textContent = `No. ${PUZZLE_NO}`;
 
@@ -1609,9 +1864,13 @@ function currentGuess() {
 }
 function validate() {
   const n = currentGuess();
-  el.submit.disabled = n === null || game.phase !== 'input';
-  el.minus.disabled = game.phase !== 'input' || (n !== null && n <= MIN_GUESS);
-  el.plus.disabled = game.phase !== 'input' || (n !== null && n >= MAX_GUESS);
+  const busy = game.phase !== 'input' || !!game.testing;
+  el.submit.disabled = n === null || busy;
+  el.minus.disabled = busy || (n !== null && n <= MIN_GUESS);
+  el.plus.disabled = busy || (n !== null && n >= MAX_GUESS);
+  el.guess.disabled = busy;
+  el.test.disabled = game.phase !== 'input' || game.testing === 'flying';
+  el.test.textContent = game.testing ? (game.testing === 'flying' ? 'Watching…' : 'Bring back') : 'Test throw';
 }
 function setLocked(locked) {
   el.guess.disabled = locked;
@@ -1628,7 +1887,7 @@ el.guess.addEventListener('input', () => {
   validate();
 });
 function stepGuess(d) {
-  if (game.phase !== 'input') return;
+  if (game.phase !== 'input' || game.testing) return;
   Sound.unlock();
   const cur = currentGuess();
   const n = clamp((cur ?? (d > 0 ? 0 : 2)) + d, MIN_GUESS, MAX_GUESS);
@@ -1653,7 +1912,7 @@ holdRepeat(el.plus, 1);
 
 function submit() {
   const n = currentGuess();
-  if (game.phase !== 'input' || n === null) return;
+  if (game.phase !== 'input' || n === null || game.testing) return;
   Sound.unlock();
   el.guess.blur();
   const p = game.prompt;
@@ -1879,9 +2138,11 @@ function loop() {
   updatePieces(simDt);
   updateObstacles(simDt, realDt);
   updateConfetti(realDt);
+  updateTest(realDt);
+  updatePuffs(simDt);
 
   // idle hover on the launch stand
-  if (proj && !anim && game.phase === 'input' && !REDUCED_MOTION) {
+  if (proj && !anim && !game.testing && game.phase === 'input' && !REDUCED_MOTION) {
     idleT += realDt;
     proj.group.position.y = proj.y + Math.sin(idleT * 2.2) * .025;
     if (proj.model.spin === 'roll' || proj.model.spin === 'flat') proj.spinner.rotation.y += realDt * .5;
