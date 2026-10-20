@@ -1676,13 +1676,19 @@ function finishAnim() {
    TEST THROW
    Obstacles step aside and the projectile flies freely so the player can
    see how far it would go. The distance follows the speed (faster = farther)
-   so it reads naturally; tick marks on the ground every unit (bigger ones
+   and always lands past the end of the correct line, since nothing slows it; tick marks on the ground every unit (bigger ones
    every 5) give a sense of scale. A ring and a see-through "ghost" mark
    where it landed after the obstacles come back.
    ===================================================================== */
 let test = null, marker = null, viewExtraX = -Infinity;
 function testDistance(p) {
-  return Math.min(30, (3 + p.mph * .13) * carryFactor(p)); // faster = farther, heavier = carries farther
+  // faster = farther, heavier = carries farther
+  const free = Math.min(36, (3 + p.mph * .13) * carryFactor(p) * 1.9);
+  // with nothing in the way it must always beat the correct line of obstacles
+  const o = OBSTACLE_MODELS[p.obstacle], m = PROJECTILE_MODELS[p.projectile];
+  const startX = -o.depth / 2 - 2 - m.front;
+  const lineEnd = (answerFor(p) - 1) * o.spacing + o.depth / 2 - startX;
+  return Math.max(free, lineEnd * 1.25 + .5);
 }
 // How well an object holds its speed in the air: light things (ping pong ball)
 // lose speed fast, heavy ones (cannonball, bowling ball) keep going.
