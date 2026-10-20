@@ -1775,24 +1775,50 @@ function followCamera(x, dt) {
   controls.maxDistance = Math.max(controls.maxDistance, d * 1.3);
   camTween = null;
 }
+// The pile: landed test projectiles are simple balls with gravity, ground
+// friction and ball-to-ball collisions (equal weights), so they shove each
+// other forward and sideways without passing through one another.
+function toPile(f, x, y, z, vx, vy, vz) {
+  spent.push({ g: f.g, spinner: f.spinner, model: f.model, x, y, z, vx, vy, vz });
+  f.g.position.set(x, y, z);
+}
 function updateSpent(dt) {
-  const damp = Math.exp(-dt * 5);
-  for (const s of spent) {
-    if (Math.abs(s.vx) + Math.abs(s.vz) < .01) continue;
-    s.x += s.vx * dt; s.z += s.vz * dt; s.vx *= damp; s.vz *= damp;
-    s.g.position.x = s.x; s.g.position.z = s.z;
-    if (s.model.spin === 'roll') { s.spinner.rotation.z -= s.vx * dt / s.model.front; s.spinner.rotation.x += s.vz * dt / s.model.front; }
+  const steps = 2, h = dt / steps;
+  for (let k = 0; k < steps; k++) {
+    for (const s of spent) {
+      const floor = s.model.bottom;
+      if (s.y > floor + 1e-4 || s.vy > 0) s.vy -= 14 * h;
+      s.x += s.vx * h; s.y += s.vy * h; s.z += s.vz * h;
+      if (s.y <= floor) {
+        s.y = floor;
+        s.vy = s.vy < -1 ? -s.vy * .3 : 0;
+        const fr = Math.exp(-h * (s.model.spin === 'roll' ? 2.5 : 7));
+        s.vx *= fr; s.vz *= fr;
+        if (Math.abs(s.vx) + Math.abs(s.vz) < .01) s.vx = s.vz = 0;
+      }
+    }
+    for (let i = 0; i < spent.length; i++) for (let j = i + 1; j < spent.length; j++) {
+      const a = spent[i], b = spent[j], min = (a.model.front + a.model.back) * .9;
+      let dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z, d = Math.hypot(dx, dy, dz);
+      if (d >= min) continue;
+      if (d < 1e-4) { dx = 0; dy = 0; dz = 1; d = 1; } else { dx /= d; dy /= d; dz /= d; }
+      const push = (min - Math.min(d, min)) / 2; // separate along the contact line
+      a.x -= dx * push; a.y -= dy * push; a.z -= dz * push;
+      b.x += dx * push; b.y += dy * push; b.z += dz * push;
+      a.y = Math.max(a.y, a.model.bottom); b.y = Math.max(b.y, b.model.bottom);
+      const vn = (a.vx - b.vx) * dx + (a.vy - b.vy) * dy + (a.vz - b.vz) * dz;
+      if (vn > 0) { // approaching: trade momentum along the contact line, a bit bouncy
+        const imp = vn * (1 + .4) / 2;
+        a.vx -= imp * dx; a.vy -= imp * dy; a.vz -= imp * dz;
+        b.vx += imp * dx; b.vy += imp * dy; b.vz += imp * dz;
+      }
+    }
   }
-  // keep pile pieces from overlapping: push apart and pass on a little motion
-  for (let i = 0; i < spent.length; i++) for (let j = i + 1; j < spent.length; j++) {
-    const a = spent[i], b = spent[j], min = (a.model.front + a.model.back) * .9;
-    const dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz);
-    if (d >= min) continue;
-    const nx = d > 1e-4 ? dx / d : 1, nz = d > 1e-4 ? dz / d : rand(-.3, .3), push = (min - d) / 2;
-    a.x -= nx * push; a.z -= nz * push; b.x += nx * push; b.z += nz * push;
-    const rel = ((a.vx - b.vx) * nx + (a.vz - b.vz) * nz) * .5;
-    if (rel > 0) { a.vx -= rel * nx; a.vz -= rel * nz; b.vx += rel * nx; b.vz += rel * nz; }
-    a.g.position.set(a.x, a.g.position.y, a.z); b.g.position.set(b.x, b.g.position.y, b.z);
+  for (const s of spent) {
+    const prev = s.g.position;
+    const mx = s.x - prev.x, mz = s.z - prev.z;
+    if (s.model.spin === 'roll') { s.spinner.rotation.z -= mx / s.model.front; s.spinner.rotation.x += mz / s.model.front; }
+    s.g.position.set(s.x, s.y, s.z);
   }
 }
 function updateFlight(f, dt) {
@@ -1808,28 +1834,28 @@ function updateFlight(f, dt) {
   const u = Math.min(1, f.t / f.T), land = .5;
   let x = f.startX + f.D * (1 - Math.pow(1 - u, f.ease)); // light = sharp slow-down, heavy = steady
   const speed = f.D * f.ease * Math.pow(1 - u, f.ease - 1) / f.T;
-  // bump into the pile of earlier test projectiles
-  const size = pm.front + pm.back;
-  let hit = null;
-  for (const s of spent) if (Math.abs(s.z - f.z) < size * .7 && (!hit || s.x < hit.x)) hit = s;
-  if (hit && x > hit.x - size * .92) {
-    x = Math.max(f.lastX, hit.x - size * .92);
-    if (!f.bumped) {
-      f.bumped = true; Sound.thud(); f.trail.visible = false;
-      const side = Math.random() < .5 ? -1 : 1, v = Math.min(1.6, .25 + speed * .12);
-      hit.vx = v * rand(.6, .9); hit.vz = -side * v * rand(.4, .8);
-      f.dz = side * size * rand(.25, .5); // glances off to the side a little
-    }
-  }
   let y;
   if (u < land) y = f.y0 - (f.y0 - floor) * Math.pow(u / land, 2);
   else {
     const b = (u - land) / (1 - land);
     y = floor + Math.abs(Math.sin(b * Math.PI * 2)) * .22 * Math.pow(1 - b, 2);
-    if (!f.landed) { f.landed = true; if (!f.bumped) Sound.thud(); f.trail.visible = false; }
+    if (!f.landed) { f.landed = true; Sound.thud(); f.trail.visible = false; }
     if (b > .5 && f.bounces === 0) { f.bounces = 1; Sound.hit('soft'); }
   }
-  if (f.bumped) f.z += (f.dz - f.z) * Math.min(1, dt * 6);
+  // hits the pile (checked in 3D, so it can sail over and land behind or on it):
+  // from here on it's handed to the pile physics and shoves what it hit
+  const min = (pm.front + pm.back) * .9;
+  for (const s of spent) {
+    const ddx = x - s.x, ddy = y - s.y, ddz = f.z - s.z, d = Math.hypot(ddx, ddy, ddz);
+    if (d >= min) continue;
+    const n = d > 1e-4 ? [ddx / d, ddy / d, ddz / d] : [-1, 0, 0];
+    const cx = s.x + n[0] * min, cy = Math.max(floor, s.y + n[1] * min), cz = s.z + n[2] * min;
+    Sound.thud();
+    f.done = true; world.remove(f.trail);
+    toPile(f, cx, cy, cz, Math.max(.6, speed * .5), u < land ? -1 : 0, rand(-.5, .5));
+    if (!landMark) landMark = makeLandMark(cx, cz);
+    return;
+  }
   const dx = x - f.lastX; f.lastX = x; f.x = x;
   g.position.set(x, y, f.z);
   if (pm.spin === 'roll') f.spinner.rotation.z -= dx / pm.front * .6;
@@ -1844,7 +1870,7 @@ function updateFlight(f, dt) {
   if (u >= 1) { // came to rest: it joins the pile and gets a landing ring
     f.done = true;
     world.remove(f.trail);
-    spent.push({ g, spinner: f.spinner, model: pm, x, z: f.z, vx: 0, vz: 0 });
+    toPile(f, x, floor, f.z, 0, 0, 0);
     if (!landMark) landMark = makeLandMark(x, f.z); // only the first test throw is marked
   }
 }
