@@ -107,6 +107,10 @@
   }
   .btn:active:not(:disabled) { transform: scale(.98); }
   .btn:disabled { opacity: .25; cursor: default; }
+  .btn.loading:disabled {
+    opacity: 1;
+    background: linear-gradient(90deg, var(--ink) var(--p, 0%), rgba(31, 28, 21, .25) var(--p, 0%));
+  }
   .row { display: flex; gap: 10px; }
   .row > * { flex: 1; }
   .actions .chip { flex: 0 0 38%; height: 58px; justify-content: center; font-size: 16px; }
@@ -1228,7 +1232,7 @@ function clearWorld() {
   line = []; pieces = []; proj = null; pedestal = null; trail = null;
   wallX = Infinity;
   puffs.forEach(p => p.m.material.dispose()); puffs = [];
-  test = null; marker = null; viewExtraX = -Infinity; game.testing = null; spent = []; flights = []; stand = null;
+  test = null; marker = null; viewExtraX = -Infinity; game.testing = null; spent = []; flights = []; stand = null; landMark = null;
 }
 
 function makeObstacle(i, popIn) {
@@ -1841,11 +1845,12 @@ function updateFlight(f, dt) {
     f.done = true;
     world.remove(f.trail);
     spent.push({ g, spinner: f.spinner, model: pm, x, z: f.z, vx: 0, vz: 0 });
-    if (marker) addRing(x, f.z);
+    if (!landMark) landMark = makeLandMark(x, f.z); // only the first test throw is marked
   }
 }
 function updateTest(realDt) {
   updateSpent(realDt);
+  updateLandMark(realDt);
   if (!test) return;
   test.t += realDt;
   for (const f of flights) updateFlight(f, realDt);
@@ -1871,16 +1876,39 @@ function makeMarker(fromX) {
   const tm = tickMat.clone(), rm = M.flag.clone(); rm.transparent = true;
   const bar = mesh(rbox(1, .01, .03, .004, 1), tm, false);
   bar.position.set(fromX, .005, .9); bar.scale.x = .01; g.add(bar);
-  g.userData = { fromX, ticks: [], next: 0, bar, rings: [], tm, rm };
+  g.userData = { fromX, ticks: [], next: 0, bar, tm, rm };
   world.add(g);
   return g;
 }
-function addRing(x, z) {
-  const U = marker.userData;
-  const ring = mesh(cached('landRing', () => new THREE.TorusGeometry(.32, .03, 8, 40).rotateX(Math.PI / 2)), U.rm, false);
-  ring.position.set(x, .02, z);
-  const end = mesh(rbox(.12, .012, .5, .005, 1), U.rm, false); end.position.set(x, .007, .9);
-  for (const r of [ring, end]) { r.scale.setScalar(.01); r.userData.t = 0; marker.add(r); U.rings.push(r); }
+// Orange ring + 3D map pin where the FIRST test throw stopped. It stays put
+// (even if that projectile gets bumped later) and stays after test mode ends.
+let landMark = null;
+const PIN_ORANGE = mat('#F28A3B', { roughness: .45 });
+function makeLandMark(x, z) {
+  const g = new THREE.Group();
+  const ring = mesh(cached('landRing', () => new THREE.TorusGeometry(.34, .035, 10, 44).rotateX(Math.PI / 2)), PIN_ORANGE, false);
+  ring.position.y = .03; g.add(ring);
+  const pin = new THREE.Group();
+  const head = mesh(sphereGeo(.17, 32, 24), PIN_ORANGE); head.position.y = .62; pin.add(head);
+  const tip = mesh(cylGeo(.15, .0, .44, 28), PIN_ORANGE); tip.position.y = .36; pin.add(tip);
+  const dot = mesh(sphereGeo(.075, 20, 14), M.white, false); dot.position.y = .62; dot.scale.set(1, 1, 2.4); pin.add(dot); // white dot on both faces; the pin slowly turns
+  pin.position.y = .14;
+  g.add(pin);
+  g.position.set(x, 0, z);
+  g.userData = { pin, ring, t: 0 };
+  ring.scale.setScalar(.01); pin.position.y = 2.2;
+  world.add(g);
+  return g;
+}
+function updateLandMark(dt) {
+  if (!landMark) return;
+  const U = landMark.userData; U.t += dt;
+  const r = Math.min(1, U.t / .3);
+  U.ring.scale.setScalar(Math.max(.01, easeOutBack(r)));
+  const d = Math.min(1, U.t / .45); // pin drops in with a little bounce, then floats
+  const drop = .14 + (1 - easeOutBack(d)) * 2;
+  U.pin.position.y = d < 1 ? drop : .14 + (REDUCED_MOTION ? 0 : Math.sin((U.t - .45) * 2.4) * .05);
+  if (!REDUCED_MOTION) U.pin.rotation.y += dt * .8;
 }
 function updateMarker(dt) {
   if (!marker) return;
@@ -1896,10 +1924,6 @@ function updateMarker(dt) {
   for (const t of U.ticks) if (t.userData.t < 1) {
     t.userData.t = Math.min(1, t.userData.t + dt / .25);
     t.scale.z = Math.max(.01, easeOutBack(t.userData.t));
-  }
-  for (const r of U.rings) if (r.userData.t < 1) {
-    r.userData.t = Math.min(1, r.userData.t + dt / .3);
-    r.scale.setScalar(Math.max(.01, easeOutBack(r.userData.t)));
   }
 }
 // Bring back: the ruler fades, the camera glides back in, the obstacles pop up
@@ -2070,6 +2094,14 @@ function validate() {
   const T = game.testing;
   const entering = T === 'active' && test && test.t < ENTER_TIME;
   if (T === 'active') set(el.submit, 'disabled', entering || !standReady());
+  // cooldown: the button fills with black from left to right until it's ready
+  const cool = T === 'active' && el.submit.disabled;
+  el.submit.classList.toggle('loading', cool);
+  if (cool) {
+    const pe = test ? Math.min(1, test.t / ENTER_TIME) : 1;
+    const ps = stand ? clamp((stand.t + .35) / .6, 0, 1) : 1;
+    el.submit.style.setProperty('--p', (Math.min(pe, ps) * 100).toFixed(1) + '%');
+  }
   set(el.submit, 'textContent', T === 'active' ? 'Launch test' : 'Launch');
   set(el.test, 'disabled', game.phase !== 'input' || T === 'returning' || (T === 'active' && (entering || flights.length > 0 || !standReady())));
   set(el.test, 'textContent', T ? 'Bring back' : 'Test throw');
