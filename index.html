@@ -195,6 +195,65 @@
   .countdown { text-align: center; font-weight: 800; font-size: 13px; color: var(--muted); margin-top: 14px; }
   .section-label { font-weight: 900; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
 
+  /* Home page */
+  #home {
+    position: fixed; inset: 0; z-index: 10; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    max-width: 480px; margin: 0 auto; padding: env(safe-area-inset-top) 16px calc(20px + env(safe-area-inset-bottom));
+    pointer-events: none;
+  }
+  .home-hero { height: max(240px, 38vh); position: relative; }
+  .home-word {
+    position: absolute; top: 18px; left: 2px; font-weight: 900; font-size: 64px; letter-spacing: -0.06em; line-height: 1;
+    text-shadow: 0 2px 0 rgba(255,255,255,.35);
+  }
+  .home-body { pointer-events: auto; display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
+  .home-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  #homeDate { font-weight: 800; font-size: 17px; color: var(--ink-2); letter-spacing: -0.02em; }
+  .home-icons { display: flex; gap: 10px; }
+  .round-btn {
+    width: 52px; height: 52px; border-radius: 50%; border: 0; background: var(--card);
+    box-shadow: 0 4px 14px rgba(80, 60, 10, .08); display: grid; place-items: center;
+  }
+  .round-btn svg { width: 24px; height: 24px; }
+  .hcard {
+    background: var(--card); border-radius: 26px; padding: 18px; border: 0; text-align: left;
+    box-shadow: 0 6px 20px rgba(80, 60, 10, .07);
+  }
+  .hlabel { font-weight: 900; font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+  .today-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .today-row h3 { margin: 0; font-weight: 900; font-size: 28px; letter-spacing: -0.045em; white-space: nowrap; }
+  .dots { display: flex; gap: 6px; }
+  .dots i { flex: none; width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid var(--ink); }
+  .dots i.exact { background: var(--green); border-color: var(--green); }
+  .dots i.over { background: var(--yellow); border-color: var(--yellow); }
+  .dots i.under { background: var(--red); border-color: var(--red); }
+  .hsub { margin: 6px 0 14px; font-weight: 700; font-size: 15px; color: var(--ink-2); }
+  .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .tile, .mini { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 6px; min-height: 64px; min-width: 0; }
+  .tile { background: rgba(31,28,21,.04); border: 0; border-radius: 18px; padding: 10px; text-align: left; }
+  .tile:disabled { opacity: .45; cursor: default; }
+  .tile:not(:disabled):active, .mini:active { transform: scale(.97); }
+  .emo { font-size: 24px; line-height: 1; flex: none; }
+  .tt { display: flex; flex-direction: column; min-width: 0; }
+  .tt b { font-weight: 900; font-size: 15px; letter-spacing: -0.03em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tt small { font-weight: 700; font-size: 13px; color: var(--muted); }
+  .mini-row { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.1fr) minmax(0, .8fr); gap: 8px; }
+  .mini { padding: 12px 14px; }
+  .msub { margin: -6px 0 16px; font-weight: 700; font-size: 15px; color: var(--muted); }
+  .list { display: grid; gap: 8px; }
+  .lrow {
+    display: grid; grid-template-columns: 36px 1fr auto; align-items: center; gap: 10px; width: 100%;
+    background: rgba(31,28,21,.04); border: 0; border-radius: 18px; padding: 12px 14px; text-align: left;
+  }
+  button.lrow:active { transform: scale(.98); }
+  .lrow .emo { font-size: 26px; text-align: center; }
+  .lrow b { display: block; font-weight: 900; font-size: 16px; letter-spacing: -0.02em; }
+  .lrow small { display: block; font-weight: 700; font-size: 13px; color: var(--muted); }
+  .lrow .chev { font-weight: 900; font-size: 18px; color: var(--ink-2); }
+  .lrow.locked .emo { opacity: .25; filter: grayscale(1); }
+  .coll-head { font-weight: 900; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 14px 0 8px; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 99px; font-weight: 800; font-size: 12px; color: #fff; margin-left: 4px; }
+
   #toast {
     position: fixed; top: calc(70px + env(safe-area-inset-top)); left: 50%; z-index: 40;
     transform: translate(-50%, -12px); opacity: 0; pointer-events: none;
@@ -238,6 +297,9 @@
       <span class="pno" id="pno"></span>
     </div>
     <div class="icons">
+      <button class="icon-btn" id="btnHome" aria-label="Home">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7"/><path d="M6 9.5V20h12V9.5"/></svg>
+      </button>
       <button class="icon-btn" id="btnHelp" aria-label="How to play">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><path d="M9.3 9.2a2.8 2.8 0 0 1 5.4 1c0 1.9-2.7 2.4-2.7 4"/><circle cx="12" cy="17.6" r=".6" fill="currentColor"/></svg>
       </button>
@@ -330,6 +392,62 @@
     </button>
     <h2 id="statsTitle">Results</h2>
     <div id="statsBody"></div>
+  </div>
+</div>
+
+<div id="home" hidden>
+  <div class="home-hero" id="homeHero"><div class="home-word">stopple</div></div>
+  <div class="home-body">
+    <div class="home-meta">
+      <span id="homeDate"></span>
+      <div class="home-icons">
+        <button class="round-btn" id="homeSound" aria-label="Mute sound"></button>
+        <button class="round-btn" id="homeHelp" aria-label="How to play">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><path d="M9.3 9.2a2.8 2.8 0 0 1 5.4 1c0 1.9-2.7 2.4-2.7 4"/><circle cx="12" cy="17.6" r=".6" fill="currentColor"/></svg>
+        </button>
+      </div>
+    </div>
+    <section class="hcard">
+      <div class="hlabel">today</div>
+      <div class="today-row"><h3>Five launches</h3><div class="dots" id="homeDots"></div></div>
+      <p class="hsub">Guess how many obstacles stop each · about 3 min</p>
+      <button class="btn" id="homePlay">Play today</button>
+    </section>
+    <section class="hcard">
+      <div class="hlabel">more ways to play</div>
+      <div class="tiles">
+        <button class="tile" id="homeLevels"><span class="emo">🎯</span><span class="tt"><b>Levels</b><small>pick any</small></span></button>
+        <button class="tile" id="homePractice"><span class="emo">🎲</span><span class="tt"><b>Practice</b><small>random</small></span></button>
+        <button class="tile" disabled><span class="emo">🏆</span><span class="tt"><b>Gauntlet</b><small>soon</small></span></button>
+      </div>
+    </section>
+    <div class="mini-row">
+      <button class="hcard mini" id="homeCollection"><span class="emo">🧸</span><span class="tt"><b>Collection</b><small id="homeCollCount">0/0</small></span></button>
+      <button class="hcard mini" id="homeStats"><span class="emo">📊</span><span class="tt"><b>Stats</b><small>your history</small></span></button>
+      <div class="hcard mini"><span class="emo">🔥</span><span class="tt"><b id="homeStreak">0</b><small>streak</small></span></div>
+    </div>
+  </div>
+</div>
+
+<div class="backdrop" id="levelsModal" hidden role="dialog" aria-modal="true" aria-labelledby="levelsTitle">
+  <div class="modal">
+    <button class="icon-btn x" data-close aria-label="Close">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+    <h2 id="levelsTitle">levels</h2>
+    <p class="msub">Play any matchup as practice. It won't count toward today.</p>
+    <div class="list" id="levelsList"></div>
+  </div>
+</div>
+
+<div class="backdrop" id="collectionModal" hidden role="dialog" aria-modal="true" aria-labelledby="collTitle">
+  <div class="modal">
+    <button class="icon-btn x" data-close aria-label="Close">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+    <h2 id="collTitle">collection</h2>
+    <p class="msub" id="collSub"></p>
+    <div id="collList"></div>
   </div>
 </div>
 
@@ -463,6 +581,8 @@ const store = {
   stats: Object.assign({ played: 0, total: 0, best: 0, streak: 0, maxStreak: 0, last: null, exact: 0 }, loaded.stats || {}),
   muted: !!loaded.muted,
   seenHelp: !!loaded.seenHelp,
+  levels: loaded.levels || {},                 // per prompt: { plays, best, kind }
+  found: loaded.found || { p: {}, o: {} },     // collection: projectiles / obstacles met so far
 };
 if (!store.daily || store.daily.date !== TODAY || !Array.isArray(store.daily.results)) {
   store.daily = { date: TODAY, results: [] };
@@ -928,15 +1048,13 @@ const OBSTACLE_MODELS = {
     build(g) {
       const s = mesh(rbox(.08, 1.4, 1.3, .025), M.plywood); s.position.y = .7; g.add(s);
     },
-    // snaps across a splintered line: the top flies, the bottom topples
+    // splits down a splintered line and both halves fall sideways, out of the projectile's path
     breakFx(o, f) {
-      const parts = splitPanel('plywood', { w: 1.3, h: 1.4, thick: .08, axis: 'h', at: .74, amp: .1, teeth: 11 });
+      const parts = splitPanel('plywoodV', { w: 1.3, h: 1.4, thick: .08, axis: 'v', at: .02, amp: .11, teeth: 11 });
       parts.forEach((p, k) => {
-        const top = k === 1, m = mesh(p.geo, M.plywood);
+        const side = k ? 1 : -1, m = mesh(p.geo, M.plywood);
         m.position.set(o.group.position.x, 0, 0).add(p.center);
-        addPiece(m, top
-          ? { dims: p.dims, v: V(rand(2.2, 3.2) * f, rand(1.2, 2), rand(-.5, .5)), av: V(rand(-1.5, 1.5), rand(-1, 1), -rand(6, 9)) }
-          : { dims: p.dims, v: V(rand(.8, 1.3) * f, .2, rand(-.2, .2)), av: V(rand(-.5, .5), 0, -rand(3, 4.5)) });
+        addPiece(m, { dims: p.dims, v: V(rand(.6, 1.2) * f, rand(.3, .8), side * rand(1.1, 1.7)), av: V(side * rand(3, 5), rand(-.6, .6), -rand(.5, 1.5)) });
       });
     },
     pieces: [{ geo: 'chunk', mat: 'plywood', n: 7, size: [.16, .3], shape: [.22, .25, 1.6] }],
@@ -1308,6 +1426,7 @@ function updateShadowBounds() {
    the whole line are always visible.
    ===================================================================== */
 const stageEl = $('stage');
+let homeOpen = false;
 let viewShift = 0, stageNdc = { top: 1, bottom: -1 };
 const tmpCam = new THREE.PerspectiveCamera();
 let camTween = null;
@@ -1372,7 +1491,7 @@ function resize() {
   const w = innerWidth, h = innerHeight;
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
-  const r = stageEl.getBoundingClientRect();
+  const r = (homeOpen ? $('homeHero') : stageEl).getBoundingClientRect();
   const cy = (r.top + r.bottom) / 2;
   viewShift = Math.max(0, h / 2 - cy);
   camera.setViewOffset(w, h + 2 * viewShift, 0, 2 * viewShift, w, h);
@@ -2139,6 +2258,7 @@ const ICON_SOUND_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColo
 function renderSound() {
   el.sound.innerHTML = store.muted ? ICON_SOUND_OFF : ICON_SOUND_ON;
   el.sound.setAttribute('aria-label', store.muted ? 'Unmute sound' : 'Mute sound');
+  $('homeSound').innerHTML = el.sound.innerHTML; $('homeSound').setAttribute('aria-label', el.sound.getAttribute('aria-label'));
 }
 
 function renderProgress() {
@@ -2264,6 +2384,7 @@ function submit() {
   const kind = n === answer ? 'exact' : n > answer ? 'over' : 'under';
   const points = kind === 'exact' ? 100 : kind === 'over' ? Math.max(10, 100 - 15 * (n - answer)) : 0;
   game.result = { guess: n, answer, points, kind, p: game.promptIndex };
+  recordPlay(game.promptIndex, game.result);
   if (game.mode === 'daily') {
     store.daily.results.push(game.result);
     if (store.daily.results.length === ROUNDS_PER_DAY) recordCompletedDaily();
@@ -2434,7 +2555,7 @@ function openStats() {
     ${done ? '<div class="countdown" id="countdown"></div>' : ''}`;
   $('statsBody').innerHTML = html;
   const sb = $('statsShare'); if (sb) sb.addEventListener('click', share);
-  $('statsPractice').addEventListener('click', () => { closeModal($('statsModal')); if (game.phase !== 'playing') startPractice(); });
+  $('statsPractice').addEventListener('click', () => { closeModal($('statsModal')); if (game.phase !== 'playing') { if (homeOpen) hideHome(); startPractice(); } });
   clearInterval(countdownTimer);
   if (done) {
     const tick = () => {
@@ -2454,9 +2575,9 @@ el.sound.addEventListener('click', () => {
 $('btnReset').addEventListener('click', () => frameCamera({ reset: true, animate: true }));
 
 document.addEventListener('keydown', e => {
-  const modalOpen = !$('helpModal').hidden || !$('statsModal').hidden;
+  const modalOpen = [...document.querySelectorAll('.backdrop')].some(m => !m.hidden);
   if (e.key === 'Escape' && modalOpen) { document.querySelectorAll('.backdrop').forEach(m => { if (!m.hidden) closeModal(m); }); return; }
-  if (modalOpen) return;
+  if (modalOpen || homeOpen) return;
   if (e.key === 'Enter' && document.activeElement && document.activeElement.tagName === 'BUTTON') return; // buttons handle their own Enter
   if (e.key === 'Enter') {
     if (game.phase === 'input') { e.preventDefault(); submit(); }
@@ -2469,6 +2590,110 @@ document.addEventListener('keydown', e => {
 window.addEventListener('pointerdown', () => Sound.unlock(), { once: true });
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && localDateStr() !== TODAY && game.phase !== 'playing') location.reload();
+});
+
+/* =====================================================================
+   HOME PAGE, LEVELS, COLLECTION
+   ===================================================================== */
+// Emoji for the menus (UI only, never on the 3D objects).
+const PROJ_ICON = { golf: '⛳', knife: '🔪', baseball: '⚾', tennis: '🎾', bowling: '🎳', arrow: '🏹', puck: '🏒', pingpong: '🏓', dart: '🎯', cannonball: '💣', snowball: '❄️', frisbee: '🥏', brick: '🧱', turkey: '🦃' };
+const OBS_ICON = { glass: '🪟', pillow: '🛏️', drywall: '🏗️', cardboard: '📦', watermelon: '🍉', phonebook: '📒', plywood: '🪵', tissue: '🧻', balloon: '🎈', hay: '🌾', snowman: '⛄', cups: '🥤', ice: '🧊', pumpkin: '🎃' };
+const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
+// every distinct projectile and obstacle used by the prompt list
+function collectionItems() {
+  const proj = [], obs = [], seenP = {}, seenO = {};
+  for (const p of PROMPTS) {
+    if (!seenP[p.projectile]) { seenP[p.projectile] = 1; proj.push({ key: p.projectile, name: cap(projName(p)), info: `${p.mass} kg · thrown at ${p.mph} mph`, icon: PROJ_ICON[p.projectile] || '•' }); }
+    if (!seenO[p.obstacle]) { seenO[p.obstacle] = 1; obs.push({ key: p.obstacle, name: cap(p.short), info: `takes ${p.breakEnergy} J to break`, icon: OBS_ICON[p.obstacle] || '•' }); }
+  }
+  return { proj, obs };
+}
+function collectionCount() {
+  const { proj, obs } = collectionItems();
+  const got = proj.filter(i => store.found.p[i.key]).length + obs.filter(i => store.found.o[i.key]).length;
+  return { got, total: proj.length + obs.length };
+}
+function recordPlay(idx, r) {
+  const L = store.levels[idx] || (store.levels[idx] = { plays: 0, best: -1, kind: null });
+  L.plays++;
+  if (r.points > L.best) { L.best = r.points; L.kind = r.kind; }
+  const p = PROMPTS[idx];
+  store.found.p[p.projectile] = 1; store.found.o[p.obstacle] = 1;
+  saveStore();
+}
+// rounds already played today count toward the collection too
+for (const r of store.daily.results) { const p = PROMPTS[r.p]; if (p) { store.found.p[p.projectile] = 1; store.found.o[p.obstacle] = 1; } }
+
+function renderHome() {
+  $('homeDate').textContent = `No. ${PUZZLE_NO} · ${new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric' })}`;
+  const res = store.daily.results;
+  $('homeDots').innerHTML = Array.from({ length: ROUNDS_PER_DAY }, (_, i) => `<i class="${res[i] ? res[i].kind : ''}"></i>`).join('');
+  $('homePlay').textContent = res.length >= ROUNDS_PER_DAY ? `See results · ${dailyTotal()}` : res.length ? `Continue · ${res.length}/${ROUNDS_PER_DAY}` : 'Play today';
+  const c = collectionCount();
+  $('homeCollCount').textContent = `${c.got}/${c.total}`;
+  $('homeStreak').textContent = currentStreak();
+}
+function showHome() {
+  if (game.phase === 'playing' || game.testing) return;
+  homeOpen = true;
+  $('home').hidden = false; $('app').hidden = true; $('fade').hidden = true;
+  renderHome();
+  if (game.phase === 'input' && currentGuess() === null) setLineCount(5, false); // a nicer line for the hero
+  controls.autoRotate = !REDUCED_MOTION; controls.autoRotateSpeed = .8;
+  resize(); frameCamera({ reset: true, animate: false });
+}
+function hideHome() {
+  homeOpen = false;
+  $('home').hidden = true; $('app').hidden = false; $('fade').hidden = false;
+  controls.autoRotate = false;
+  if (game.phase === 'input') setLineCount(currentGuess() || 1, false);
+  resize(); frameCamera({ reset: true, animate: false });
+}
+$('btnHome').addEventListener('click', showHome);
+$('homeHelp').addEventListener('click', () => openModal('helpModal'));
+$('homeSound').addEventListener('click', () => el.sound.click());
+$('homeStats').addEventListener('click', openStats);
+$('homePlay').addEventListener('click', () => {
+  hideHome();
+  if (game.mode !== 'daily') backToDaily();
+  if (store.daily.results.length >= ROUNDS_PER_DAY) openStats();
+});
+$('homePractice').addEventListener('click', () => { hideHome(); startPractice(); });
+function startLevel(i) {
+  game.mode = 'practice';
+  game.practiceLast = i;
+  setPrompt(i);
+  startRound();
+}
+$('homeLevels').addEventListener('click', () => {
+  const kindLabel = { exact: 'Stopped!', over: 'too many', under: 'broke through' };
+  const kindColor = { exact: 'var(--green)', over: 'var(--yellow)', under: 'var(--red)' };
+  $('levelsList').innerHTML = PROMPTS.map((p, i) => {
+    const L = store.levels[i];
+    const status = L && L.plays
+      ? `best ${L.best} pts<span class="pill" style="background:${kindColor[L.kind]}">${kindLabel[L.kind]}</span>`
+      : 'not played yet';
+    return `<button class="lrow" data-level="${i}"><span class="emo">${PROJ_ICON[p.projectile] || '•'}</span>
+      <span><b>${escapeHtml(cap(projName(p)))} vs ${escapeHtml(shortPl(p))}</b><small>${status}</small></span><span class="chev">›</span></button>`;
+  }).join('');
+  openModal('levelsModal');
+});
+$('levelsList').addEventListener('click', e => {
+  const b = e.target.closest('[data-level]'); if (!b) return;
+  closeModal($('levelsModal'));
+  hideHome();
+  startLevel(+b.dataset.level);
+});
+$('homeCollection').addEventListener('click', () => {
+  const { proj, obs } = collectionItems(), c = collectionCount();
+  const row = (it, got) => got
+    ? `<div class="lrow"><span class="emo">${it.icon}</span><span><b>${escapeHtml(it.name)}</b><small>${escapeHtml(it.info)}</small></span><span></span></div>`
+    : `<div class="lrow locked"><span class="emo">❔</span><span><b>???</b><small>not found yet</small></span><span></span></div>`;
+  $('collSub').textContent = `Everything you've thrown or smashed. ${c.got} of ${c.total} found.`;
+  $('collList').innerHTML =
+    `<div class="coll-head">Projectiles</div><div class="list">${proj.map(i => row(i, store.found.p[i.key])).join('')}</div>` +
+    `<div class="coll-head">Obstacles</div><div class="list">${obs.map(i => row(i, store.found.o[i.key])).join('')}</div>`;
+  openModal('collectionModal');
 });
 
 /* =====================================================================
@@ -2523,6 +2748,7 @@ if (doneCount >= ROUNDS_PER_DAY) {
   setPrompt(DAILY[doneCount]);
   startRound();
 }
+showHome();
 if (!store.seenHelp) openModal('helpModal');
 loop();
 </script>
