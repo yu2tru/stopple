@@ -56,9 +56,9 @@
   #app > header, #app > .bar, #app > .panel { pointer-events: auto; }
 
   /* Header */
-  header.top { display: flex; align-items: center; justify-content: space-between; height: 60px; }
+  header.top, .top-row { display: flex; align-items: center; justify-content: space-between; height: 64px; }
   .brand { display: flex; align-items: baseline; gap: 8px; }
-  .wordmark { font-weight: 900; font-size: 32px; letter-spacing: -0.055em; line-height: 1; }
+  .wordmark { font-family: inherit; color: var(--ink); background: none; border: 0; padding: 0; margin: 0; cursor: pointer; font-weight: 900; font-size: 42px; letter-spacing: -0.06em; line-height: 1; }
   .pno { font-weight: 800; font-size: 15px; color: var(--muted); letter-spacing: -0.02em; }
   .icons { display: flex; gap: 2px; margin-right: -8px; }
   .icon-btn {
@@ -195,50 +195,58 @@
   .countdown { text-align: center; font-weight: 800; font-size: 13px; color: var(--muted); margin-top: 14px; }
   .section-label { font-weight: 900; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
 
-  /* Home page */
+  /* Home page: one screen, no scrolling. The 3D hero takes whatever height is left. */
   #home {
-    position: fixed; inset: 0; z-index: 10; overflow-y: auto; -webkit-overflow-scrolling: touch;
-    max-width: 480px; margin: 0 auto; padding: env(safe-area-inset-top) 16px calc(20px + env(safe-area-inset-bottom));
+    position: fixed; top: 0; left: 0; right: 0; height: 100%; z-index: 10;
+    max-width: 480px; margin: 0 auto; overflow: hidden;
+    display: flex; flex-direction: column;
+    padding: env(safe-area-inset-top) 16px calc(12px + env(safe-area-inset-bottom));
     pointer-events: none;
   }
-  .home-hero { height: max(240px, 38vh); position: relative; }
-  .home-word {
-    position: absolute; top: 18px; left: 2px; font-weight: 900; font-size: 64px; letter-spacing: -0.06em; line-height: 1;
-    text-shadow: 0 2px 0 rgba(255,255,255,.35);
-  }
-  .home-body { pointer-events: auto; display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
+  @supports (height: 100dvh) { #home { height: 100dvh; } }
+  .home-hero { flex: 1 1 auto; min-height: 120px; position: relative; }
+  .home-hero .wordmark { pointer-events: auto; }
+  .home-body { flex: none; pointer-events: auto; display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr); }
   .home-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-  #homeDate { font-weight: 800; font-size: 17px; color: var(--ink-2); letter-spacing: -0.02em; }
-  .home-icons { display: flex; gap: 10px; }
+  #homeDate { font-weight: 800; font-size: clamp(13.5px, 4.1vw, 16px); color: var(--ink-2); letter-spacing: -0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .home-icons { display: flex; gap: 10px; flex: none; }
   .round-btn {
-    width: 52px; height: 52px; border-radius: 50%; border: 0; background: var(--card);
+    width: 50px; height: 50px; border-radius: 50%; border: 0; background: var(--card);
     box-shadow: 0 4px 14px rgba(80, 60, 10, .08); display: grid; place-items: center;
   }
   .round-btn svg { width: 24px; height: 24px; }
   .hcard {
-    background: var(--card); border-radius: 26px; padding: 18px; border: 0; text-align: left;
+    background: var(--card); border-radius: 26px; padding: 16px; border: 0; text-align: left;
     box-shadow: 0 6px 20px rgba(80, 60, 10, .07);
   }
   .hlabel { font-weight: 900; font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
   .today-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .today-row h3 { margin: 0; font-weight: 900; font-size: 28px; letter-spacing: -0.045em; white-space: nowrap; }
-  .dots { display: flex; gap: 6px; }
-  .dots i { flex: none; width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid var(--ink); }
+  .dots { display: flex; gap: 6px; flex: none; }
+  .dots i { flex: none; width: 17px; height: 17px; border-radius: 50%; border: 2.5px solid var(--ink); }
   .dots i.exact { background: var(--green); border-color: var(--green); }
   .dots i.over { background: var(--yellow); border-color: var(--yellow); }
   .dots i.under { background: var(--red); border-color: var(--red); }
-  .hsub { margin: 6px 0 14px; font-weight: 700; font-size: 15px; color: var(--ink-2); }
-  .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-  .tile, .mini { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 6px; min-height: 64px; min-width: 0; }
-  .tile { background: rgba(31,28,21,.04); border: 0; border-radius: 18px; padding: 10px; text-align: left; }
+  .hsub { margin: 4px 0 12px; font-weight: 700; font-size: 15px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .tile, .mini { display: flex; align-items: center; gap: 5px; min-width: 0; }
+  .tile { background: rgba(31,28,21,.045); border: 0; border-radius: 18px; padding: 10px 6px; min-height: 58px; text-align: left; }
   .tile:disabled { opacity: .45; cursor: default; }
   .tile:not(:disabled):active, .mini:active { transform: scale(.97); }
-  .emo { font-size: 24px; line-height: 1; flex: none; }
+  .emo { font-size: clamp(19px, 5.6vw, 23px); line-height: 1; flex: none; }
   .tt { display: flex; flex-direction: column; min-width: 0; }
-  .tt b { font-weight: 900; font-size: 15px; letter-spacing: -0.03em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .tt small { font-weight: 700; font-size: 13px; color: var(--muted); }
-  .mini-row { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.1fr) minmax(0, .8fr); gap: 8px; }
-  .mini { padding: 12px 14px; }
+  .tt b { font-weight: 900; font-size: clamp(12.5px, 3.75vw, 15px); letter-spacing: -0.04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tt small { font-weight: 700; font-size: clamp(10.5px, 3.15vw, 12.5px); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mini-row { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+  .mini { padding: 12px 8px; min-height: 60px; }
+  @media (max-height: 700px) {
+    .hcard { padding: 13px 14px; border-radius: 22px; }
+    .today-row h3 { font-size: 25px; }
+    .home-body { gap: 8px; }
+    #homePlay { height: 50px; }
+    .round-btn { width: 44px; height: 44px; }
+  }
+  @media (max-width: 380px) { .round-btn { width: 44px; height: 44px; } .hcard { padding-left: 12px; padding-right: 12px; } }
   .msub { margin: -6px 0 16px; font-weight: 700; font-size: 15px; color: var(--muted); }
   .list { display: grid; gap: 8px; }
   .lrow {
@@ -293,13 +301,10 @@
 <div id="app">
   <header class="top">
     <div class="brand">
-      <span class="wordmark">stopple</span>
+      <button class="wordmark" id="gameWord" aria-label="stopple, go to home page">stopple</button>
       <span class="pno" id="pno"></span>
     </div>
     <div class="icons">
-      <button class="icon-btn" id="btnHome" aria-label="Home">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7"/><path d="M6 9.5V20h12V9.5"/></svg>
-      </button>
       <button class="icon-btn" id="btnHelp" aria-label="How to play">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><path d="M9.3 9.2a2.8 2.8 0 0 1 5.4 1c0 1.9-2.7 2.4-2.7 4"/><circle cx="12" cy="17.6" r=".6" fill="currentColor"/></svg>
       </button>
@@ -314,7 +319,6 @@
     <div class="progress" id="progress" aria-label="Round progress"></div>
     <div class="practice-bar" id="practiceBar" hidden>
       <span class="tag">practice</span>
-      <button class="chip sm" id="btnBackDaily">back to daily</button>
     </div>
   </div>
 
@@ -396,7 +400,9 @@
 </div>
 
 <div id="home" hidden>
-  <div class="home-hero" id="homeHero"><div class="home-word">stopple</div></div>
+  <div class="home-hero" id="homeHero">
+    <div class="top-row"><button class="wordmark" id="homeWord" tabindex="-1">stopple</button></div>
+  </div>
   <div class="home-body">
     <div class="home-meta">
       <span id="homeDate"></span>
@@ -410,7 +416,7 @@
     <section class="hcard">
       <div class="hlabel">today</div>
       <div class="today-row"><h3>Five launches</h3><div class="dots" id="homeDots"></div></div>
-      <p class="hsub">Guess how many obstacles stop each · about 3 min</p>
+      <p class="hsub">Guess how many stop each · about 3 min</p>
       <button class="btn" id="homePlay">Play today</button>
     </section>
     <section class="hcard">
@@ -423,7 +429,7 @@
     </section>
     <div class="mini-row">
       <button class="hcard mini" id="homeCollection"><span class="emo">🧸</span><span class="tt"><b>Collection</b><small id="homeCollCount">0/0</small></span></button>
-      <button class="hcard mini" id="homeStats"><span class="emo">📊</span><span class="tt"><b>Stats</b><small>your history</small></span></button>
+      <button class="hcard mini" id="homeStats"><span class="emo">📊</span><span class="tt"><b>Stats</b><small>history</small></span></button>
       <div class="hcard mini"><span class="emo">🔥</span><span class="tt"><b id="homeStreak">0</b><small>streak</small></span></div>
     </div>
   </div>
@@ -2484,7 +2490,6 @@ function backToDaily() {
     game.round = done; setPrompt(DAILY[done]); startRound();
   }
 }
-$('btnBackDaily').addEventListener('click', () => { if (game.phase !== 'playing') backToDaily(); });
 $('donePractice').addEventListener('click', startPractice);
 
 /* ---------- share ---------- */
@@ -2625,7 +2630,7 @@ function recordPlay(idx, r) {
 for (const r of store.daily.results) { const p = PROMPTS[r.p]; if (p) { store.found.p[p.projectile] = 1; store.found.o[p.obstacle] = 1; } }
 
 function renderHome() {
-  $('homeDate').textContent = `No. ${PUZZLE_NO} · ${new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric' })}`;
+  $('homeDate').textContent = `No. ${PUZZLE_NO} · ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}`;
   const res = store.daily.results;
   $('homeDots').innerHTML = Array.from({ length: ROUNDS_PER_DAY }, (_, i) => `<i class="${res[i] ? res[i].kind : ''}"></i>`).join('');
   $('homePlay').textContent = res.length >= ROUNDS_PER_DAY ? `See results · ${dailyTotal()}` : res.length ? `Continue · ${res.length}/${ROUNDS_PER_DAY}` : 'Play today';
@@ -2649,7 +2654,7 @@ function hideHome() {
   if (game.phase === 'input') setLineCount(currentGuess() || 1, false);
   resize(); frameCamera({ reset: true, animate: false });
 }
-$('btnHome').addEventListener('click', showHome);
+$('gameWord').addEventListener('click', showHome);
 $('homeHelp').addEventListener('click', () => openModal('helpModal'));
 $('homeSound').addEventListener('click', () => el.sound.click());
 $('homeStats').addEventListener('click', openStats);
