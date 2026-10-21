@@ -205,7 +205,10 @@
   .home-col { width: min(480px, 100%); height: 100%; margin: 0 auto; display: flex; flex-direction: column; padding-bottom: 10px; }
   .hero { position: relative; flex: 1 1 0; min-height: 120px; }   /* transparent: the live 3D scene shows through */
   .home-top { display: flex; align-items: center; height: calc(56px + env(safe-area-inset-top)); padding: calc(8px + env(safe-area-inset-top)) 10px 4px 16px; }
-  .home-body { flex: none; padding: 0 14px; background: linear-gradient(to bottom, transparent, var(--bg) 22px); }
+  .home-body { flex: none; padding: 0 14px; position: relative; isolation: isolate; }
+  .home-body::before { /* the yellow behind the cards spans the whole page width, fading in at the top */
+    content: ''; position: absolute; z-index: -1; top: -30px; bottom: -80px; left: 50%; width: 100vw; transform: translateX(-50%);
+    background: linear-gradient(to bottom, transparent, var(--bg) 46px); pointer-events: none; }
   .home-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
   .home-date { font-weight: 800; font-size: 15px; color: var(--ink-2); letter-spacing: -.02em; }
   .home-icons { display: flex; gap: 8px; }
@@ -975,8 +978,8 @@ const OBSTACLE_MODELS = {
     breakFx(o, f) {
       const x = o.group.position.x;
       const P = [
-        [[.04, .8, .92], [-.4, .4, 0], [-.4, 0, 0]], [[.04, .8, .92], [.4, .4, 0], [1, 0, 0]],
-        [[.82, .8, .04], [0, .4, -.45], [0, 0, -1]], [[.82, .8, .04], [0, .4, .45], [0, 0, 1]],
+        [[.04, .74, .84], [-.4, .4, 0], [-.4, 0, 0]], [[.04, .74, .84], [.4, .4, 0], [1, 0, 0]],
+        [[.72, .74, .04], [0, .4, -.45], [0, 0, -1]], [[.72, .74, .04], [0, .4, .45], [0, 0, 1]],
         [[.82, .04, .92], [0, .79, 0], [0, 1, 0]],
       ];
       for (const [d, off, dir] of P) {
@@ -1175,7 +1178,7 @@ const OBSTACLE_MODELS = {
       pumpkinRibs().forEach(r => {
         const dir = new THREE.Vector3(r.position.x, 0, r.position.z).normalize();
         r.position.x += x;
-        addPiece(r, { dims: [.3, .5, .26], v: V(dir.x * 1.8 + rand(1, 2) * f, rand(1.4, 2.6), dir.z * rand(1.4, 2.4)), av: V(rand(-6, 6), rand(-6, 6), rand(-6, 6)) });
+        addPiece(r, { dims: [.2, .44, .15], v: V(dir.x * 1.8 + rand(1, 2) * f, rand(1.4, 2.6), dir.z * rand(1.4, 2.4)), av: V(rand(-6, 6), rand(-6, 6), rand(-6, 6)) });
       });
       const st = mesh(cylGeo(.03, .045, .16, 10), M.pumpkinStem); st.position.set(x, .58, 0);
       addPiece(st, { dims: [.07, .16, .07], v: V(rand(1, 2) * f, 3, rand(-.5, .5)), av: V(rand(-8, 8), 0, rand(-8, 8)) });
@@ -1424,7 +1427,7 @@ function updateShadowBounds() {
    ===================================================================== */
 const stageEl = $('stage');
 let homeOpen = false;
-let viewShift = 0, stageNdc = { top: 1, bottom: -1 };
+let viewShift = 0, stageNdc = { top: 1, bottom: -1, left: -1, right: 1 };
 const tmpCam = new THREE.PerspectiveCamera();
 let camTween = null;
 
@@ -1449,7 +1452,7 @@ function fitDistance(dir, target, box) {
     tmpCam.lookAt(target); tmpCam.updateMatrixWorld(true);
     for (const c of corners) {
       v.copy(c).project(tmpCam);
-      if (v.z > 1 || Math.abs(v.x) > .9 || v.y > stageNdc.top - .05 || v.y < stageNdc.bottom + .05) return false;
+      if (v.z > 1 || v.x < stageNdc.left + .1 * (stageNdc.right - stageNdc.left) / 2 || v.x > stageNdc.right - .1 * (stageNdc.right - stageNdc.left) / 2 || v.y > stageNdc.top - .05 || v.y < stageNdc.bottom + .05) return false;
     }
     return true;
   };
@@ -1493,7 +1496,8 @@ function resize() {
   viewShift = Math.max(0, h / 2 - cy);
   camera.setViewOffset(w, h + 2 * viewShift, 0, 2 * viewShift, w, h);
   camera.updateProjectionMatrix();
-  stageNdc = { top: 1 - 2 * r.top / h, bottom: 1 - 2 * r.bottom / h };
+  // on the home page the scene fits the column; in the game it may use the full width
+  stageNdc = { top: 1 - 2 * r.top / h, bottom: 1 - 2 * r.bottom / h, left: homeOpen ? 2 * r.left / w - 1 : -1, right: homeOpen ? 2 * r.right / w - 1 : 1 };
   confettiCanvas.width = w * Math.min(devicePixelRatio || 1, 2); confettiCanvas.height = h * Math.min(devicePixelRatio || 1, 2);
 }
 
@@ -1511,10 +1515,12 @@ let phys = null;
 function makePhys() {
   const w = new CANNON.World({ gravity: new CANNON.Vec3(0, -16, 0), allowSleep: true });
   w.broadphase = new CANNON.SAPBroadphase(w);
-  w.solver.iterations = 10;
-  w.defaultContactMaterial.friction = .55;
+  w.solver.iterations = 18;
+  w.defaultContactMaterial.friction = .65;
   w.defaultContactMaterial.restitution = .12;
-  w.defaultContactMaterial.contactEquationRelaxation = 4;
+  w.defaultContactMaterial.contactEquationRelaxation = 3;
+  w.defaultContactMaterial.contactEquationStiffness = 5e7;
+  w.defaultContactMaterial.frictionEquationStiffness = 5e7;
   const ground = new CANNON.Body({ mass: 0, shape: new CANNON.Plane(), collisionFilterGroup: PH.STATIC, collisionFilterMask: PH.BIG | PH.SMALL });
   ground.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
   w.addBody(ground);
@@ -1532,6 +1538,12 @@ function makePhys() {
       if (b.rollStop && Math.abs(b.velocity.y) < .3) { // rolling resistance wherever it's resting
         b.velocity.x *= .93; b.velocity.z *= .93; b.angularVelocity.scale(.9, b.angularVelocity);
       }
+      // resting friction: once a piece is nearly still, its rocking and spinning die out (no endless jiggle)
+      if (b.mass > 0 && s < .6 && Math.abs(b.velocity.y) < .4) {
+        b.angularVelocity.scale(.92, b.angularVelocity); b.velocity.x *= .96; b.velocity.z *= .96;
+        b.slowT = (b.slowT || 0) + w.dt;
+        if (b.slowT > 1.2 && b !== projBody) b.sleep(); // been basically still for a while: put it to rest (a hit wakes it)
+      } else b.slowT = 0;
     }
   });
   return w;
@@ -1541,10 +1553,10 @@ function makeBody(obj, { shape, offset, mass, v, av, drag = .25, grav = 1, small
   const b = new CANNON.Body({
     mass,
     linearDamping: drag > .3 ? 1 - Math.exp(-drag) : .04,
-    angularDamping: drag > 1.5 ? .8 : .12,
+    angularDamping: drag > 1.5 ? .8 : .25,
     collisionFilterGroup: small ? PH.SMALL : PH.BIG,
     collisionFilterMask: small ? PH.BIG | PH.STATIC : PH.BIG | PH.SMALL | PH.STATIC,
-    sleepSpeedLimit: .15, sleepTimeLimit: .6,
+    sleepSpeedLimit: .25, sleepTimeLimit: .35,
   });
   b.addShape(shape, offset ? new CANNON.Vec3(...offset) : undefined);
   b.position.copy(toVec(obj.position));
@@ -1594,7 +1606,7 @@ function addStandingWall(fromIdx) {
 }
 function stepPhysics(dt) {
   if (!phys || dt <= 0) return;
-  phys.step(1 / 60, dt, 5);
+  phys.step(1 / 120, dt, 10); // small steps: thin pieces don't pass through each other
   for (const p of pieces) { p.m.position.copy(p.body.position); p.m.quaternion.copy(p.body.quaternion); }
   if (projBody && proj) { proj.group.position.copy(projBody.position); proj.group.quaternion.copy(projBody.quaternion); }
 }
@@ -1621,7 +1633,9 @@ function splitPanel(key, { w, h, thick, axis, at, amp = .07, teeth = 8 }) {
       g.computeBoundingBox();
       const center = g.boundingBox.getCenter(new THREE.Vector3()), size = g.boundingBox.getSize(new THREE.Vector3());
       g.translate(-center.x, -center.y, -center.z);
-      return { geo: g, center, dims: [size.x, size.y, size.z] };
+      // the collider leaves out the jagged teeth, so the two halves don't start overlapping
+      const dims = [size.x, size.y, size.z]; if (axis === 'v') dims[2] = Math.max(.05, dims[2] - 2 * amp); else dims[1] = Math.max(.05, dims[1] - 2 * amp);
+      return { geo: g, center, dims };
     });
   });
 }
@@ -1769,7 +1783,7 @@ function startLaunch(n) {
   const encounter = Math.min(n, broken + 1);
   let t1 = (frontFace(0) - startX) / 1;
   for (let i = 0; i < encounter - 1; i++) t1 += (frontFace(i + 1) - frontFace(i)) / rel(i + 1);
-  if (n <= broken) t1 += 2 * Math.max(.3, endX - frontFace(n - 1)) / rel(n); // glides on to where it would have stopped
+  if (n <= broken) t1 += Math.max(.3, endX - frontFace(n - 1)) / rel(n); // carries on past the end of the line
   const base = Math.max(4, t1 / 2.2);
   anim = { phase: 'windup', t: 0, n, broken, KE, E: p.breakEnergy, nextIdx: 0, base, rel, speed: base, after: 0, startX, endX };
   timeScale = 1;
@@ -1837,10 +1851,9 @@ function updateAnim(realDt) {
       setTrail(speed);
     }
   } else if (a.phase === 'coast') {
-    // no obstacles left, but it only has the energy to reach where the right line would end:
-    // it glides there, easing off, then drops
-    const s = proj.x - a.c0;
-    const v = Math.max(.35, a.v0 * Math.sqrt(Math.max(0, 1 - s / a.D)));
+    // nothing left in the way: it keeps the speed it has left and carries on past where the right line
+    // would end, then gravity takes over and it rolls out whatever speed is left
+    const v = a.v0;
     proj.x += v * dt;
     g.position.set(proj.x, proj.y, 0);
     spinBy(v * dt);
@@ -1848,7 +1861,7 @@ function updateAnim(realDt) {
     if (proj.x - a.c0 >= a.D) {
       a.phase = 'flyoff'; a.after = 0;
       trail.visible = false;
-      releaseProjectile(V(Math.max(.6, v), .2, rand(-.2, .2)));
+      releaseProjectile(V(v, .1, rand(-.2, .2)));
     }
   } else if (a.phase === 'flyoff') {
     a.after += realDt;
