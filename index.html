@@ -408,6 +408,8 @@ const rand = (a, b) => a + Math.random() * (b - a);
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
 const easeInOutCubic = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const easeInCubic = t => t * t * t;
+const easeInBack = t => { const c1 = 1.70158; return (c1 + 1) * t * t * t - c1 * t * t; };
 const easeOutBack = t => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
 const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const pluralize = s => /(x|s|ch|sh)$/.test(s) ? s + 'es' : s + 's';
@@ -1232,7 +1234,7 @@ function clearWorld() {
   line = []; pieces = []; proj = null; pedestal = null; trail = null;
   wallX = Infinity;
   puffs.forEach(p => p.m.material.dispose()); puffs = [];
-  test = null; marker = null; viewExtraX = -Infinity; game.testing = null; spent = []; flights = []; stand = null; landMark = null;
+  test = null; marker = null; viewExtraX = -Infinity; game.testing = null; spent = []; flights = []; stand = null; landMark = null; heightMap = new Map(); projBody = null; testFade = null;
 }
 
 function makeObstacle(i, popIn) {
@@ -1382,6 +1384,25 @@ function resize() {
    DEBRIS
    ===================================================================== */
 const UP = new THREE.Vector3(0, 1, 0);
+// GROUND HEIGHT MAP for the debris pile. Settled debris (and the settled
+// projectile) raise the ground in the cells they cover, so later pieces land
+// on top of them and stack up. Test throws are not part of it, and neither
+// are the standing obstacles: each group only collides with itself.
+const HM_CELL = .1;
+let heightMap = new Map();
+const hmKey = (ix, iz) => ix * 65536 + iz;
+function groundAt(x, z, half) {
+  let h = 0;
+  const x0 = Math.floor((x - half) / HM_CELL), x1 = Math.floor((x + half) / HM_CELL);
+  const z0 = Math.floor((z - half) / HM_CELL), z1 = Math.floor((z + half) / HM_CELL);
+  for (let ix = x0; ix <= x1; ix++) for (let iz = z0; iz <= z1; iz++) { const v = heightMap.get(hmKey(ix, iz)); if (v > h) h = v; }
+  return h;
+}
+function stampGround(x, z, half, top) {
+  const x0 = Math.floor((x - half) / HM_CELL), x1 = Math.floor((x + half) / HM_CELL);
+  const z0 = Math.floor((z - half) / HM_CELL), z1 = Math.floor((z + half) / HM_CELL);
+  for (let ix = x0; ix <= x1; ix++) for (let iz = z0; iz <= z1; iz++) { const k = hmKey(ix, iz); if (!(heightMap.get(k) >= top)) heightMap.set(k, top); }
+}
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 // orientation + resting height for a piece lying on its thinnest side
 function flatRest(dims) {
@@ -1394,7 +1415,10 @@ function addPiece(obj, { v, av, dims, drag = .25, grav = 1, rest, target }) {
   if (target === undefined) { const fr = flatRest(dims); target = fr.target; if (rest === undefined) rest = fr.rest; }
   const shadow = pieces.length < 240;
   obj.traverse(c => { if (c.isMesh) { c.castShadow = shadow && c.material !== M.glassShard; c.receiveShadow = true; } });
-  pieces.push({ m: obj, v, av, drag, grav, rest, target, grounded: false, sleep: 0, t: 0 });
+  // footprint for the height map: lying flat it covers its two larger sides
+  let fp;
+  if (dims) { const d = [...dims].sort((a, b) => a - b); fp = (d[1] + d[2]) / 4 * .7; } else fp = rest * .75;
+  pieces.push({ m: obj, v, av, drag, grav, rest, half: rest, fp, target, grounded: false, sleep: 0, t: 0 });
   world.add(obj);
 }
 // a flat panel split along a jagged line, as two ready-to-use pieces.
@@ -1506,7 +1530,14 @@ function updatePieces(dt) {
     p.v.x *= damp; p.v.z *= damp; if (p.v.y > 0 || p.drag > 1) p.v.y *= damp;
     if (p.drag > 1.5 && !p.grounded) { p.v.x += Math.sin(p.t * 7 + p.av.x) * dt * 2; p.v.z += Math.cos(p.t * 6 + p.av.y) * dt * 2; } // flutter
     const pos = p.m.position;
+    const px = pos.x, pz = pos.z;
     pos.addScaledVector(p.v, dt);
+    let ground = groundAt(pos.x, pos.z, p.fp);
+    if (ground - (pos.y - p.half) > .1) { // slid into a taller heap: bump off it
+      pos.x = px; pos.z = pz; p.v.x *= -.3; p.v.z *= -.3;
+      ground = groundAt(pos.x, pos.z, p.fp);
+    }
+    p.rest = ground + p.half;
     if (pos.x > wallX - .04 && pos.y < wallH) { pos.x = wallX - .04; if (p.v.x > 0) p.v.x *= -.25; }
     const rolls = p.target === null;
     if (pos.y <= p.rest) {
@@ -1517,9 +1548,10 @@ function updatePieces(dt) {
       p.grounded = true;
     }
     if (p.grounded && pos.y <= p.rest + .02) {
-      if (rolls) { p.m.rotation.z -= p.v.x * dt / p.rest; p.m.rotation.x += p.v.z * dt / p.rest; }
+      if (rolls) { p.m.rotation.z -= p.v.x * dt / p.half; p.m.rotation.x += p.v.z * dt / p.half; }
       else p.m.quaternion.slerp(p.target, Math.min(1, dt * 9));
       if (p.v.lengthSq() < .004) p.sleep += dt; else p.sleep = 0;
+      if (p.sleep > .25 && !p.stamped) { p.stamped = true; stampGround(pos.x, pos.z, p.fp, pos.y + p.half); } // now others can land on it
     } else {
       p.m.rotation.x += p.av.x * dt; p.m.rotation.y += p.av.y * dt; p.m.rotation.z += p.av.z * dt;
     }
@@ -1588,14 +1620,16 @@ function startLaunch(n) {
   const slowIdx = Math.max(0, encounter - 2);
   const startX = projStartX();
   const slowStartX = frontFace(slowIdx) - 1.0;
+  const base = Math.max(10, (slowStartX - startX) / 1.0);
   anim = {
     phase: 'windup', t: 0, n, broken, KE, E: p.breakEnergy,
     stops: n > broken, nextIdx: 0, slowIdx, slowStartX,
-    base: Math.max(10, (slowStartX - startX) / 1.0),
-    frac: 1, after: 0, startX,
+    base, speed: base, frac: 1, after: 0, startX,
   };
   timeScale = 1;
 }
+// speed the projectile should have with the energy it has left
+const speedFor = (a, frac) => a.base * (.2 + .8 * Math.sqrt(Math.max(0, frac)));
 
 function updateAnim(realDt) {
   if (!anim) return;
@@ -1613,10 +1647,11 @@ function updateAnim(realDt) {
     if (pm.spin === 'roll') proj.spinner.rotation.z = .5 * easeOutCubic(k);
     g.scale.set(1 - .1 * k, 1 + .05 * k, 1 + .05 * k);
     if (k >= 1) { a.phase = 'fly'; a.t = 0; g.scale.set(1, 1, 1); Sound.whoosh(); trail.visible = true; }
-  } else if (a.phase === 'fly' || a.phase === 'flyoff') {
-    const speed = a.base * (.55 + .45 * Math.sqrt(Math.max(0, a.frac)));
+  } else if (a.phase === 'fly') {
+    // each obstacle eats energy: the speed eases down after every hit
+    a.speed += (speedFor(a, a.frac) - a.speed) * Math.min(1, dt * 10);
+    const speed = a.speed;
     proj.x += speed * dt;
-    // break or stop at the next obstacle
     while (a.nextIdx < a.n && proj.x + pm.front >= frontFace(a.nextIdx)) {
       const o = line[a.nextIdx];
       if (a.nextIdx < a.broken) {
@@ -1627,58 +1662,87 @@ function updateAnim(realDt) {
         if (!REDUCED_MOTION) shake = Math.min(.14, shake + .05);
         a.nextIdx++;
         a.frac = (a.KE - a.nextIdx * a.E) / a.KE;
+        a.speed *= .82; // the jolt of the impact
       } else {
         // stopped by this obstacle
         a.phase = 'stopped'; a.t = 0;
         proj.x = frontFace(a.nextIdx) - pm.front + (pm.sticky || 0);
+        g.position.x = proj.x;
         wallX = frontFace(a.nextIdx); wallH = obstModel().height;
         startWobble(o, 1);
         if (obstModel().crack) addCracks(o, obstModel().crack === 'light');
         Sound.stopHit(obstModel().sound);
         if (!REDUCED_MOTION) shake = Math.min(.14, shake + .04);
         trail.visible = false;
-        if (pm.sticky) { g.position.x = proj.x; o.inner.attach(g); proj.stuck = true; }
-        else { proj.vx = -rand(1.2, 2); proj.vy = 1.4; proj.falling = true; }
+        if (pm.sticky) { o.inner.attach(g); proj.stuck = true; }
+        else projBody = { vx: -rand(1.2, 2), vy: 1.4, vz: rand(-.4, .4) }; // bounces back and drops onto the debris
         break;
       }
     }
-    if (a.phase !== 'stopped') {
-      if (a.nextIdx >= a.n && a.phase === 'fly') { a.phase = 'flyoff'; a.after = 0; }
-      if (a.phase === 'flyoff') {
-        a.after += realDt;
-        proj.y -= .6 * a.after * dt * 3;
-        if (a.after > 1.0) finishAnim();
-      }
-      g.position.set(proj.x, proj.y, 0);
+    if (a.phase === 'fly') {
+      if (a.nextIdx >= a.n) { // broke through everything: it flies on under real physics
+        a.phase = 'flyoff'; a.after = 0;
+        projBody = { vx: speed, vy: .5, vz: rand(-.25, .25) };
+      } else g.position.set(proj.x, proj.y, 0);
       if (pm.spin === 'roll') proj.spinner.rotation.z -= speed * dt / pm.front * .6;
       if (pm.spin === 'flat') proj.spinner.rotation.y += speed * dt * 2;
       if (pm.spin === 'axis') proj.spinner.rotation.x += speed * dt * .8;
       if (pm.spin === 'tumble') proj.spinner.rotation.z -= speed * dt * .5;
-      trail.position.set(proj.x - pm.back * .6, proj.y, 0);
-      const r = pm.spin === 'none' || pm.spin === 'axis' ? .07 : pm.bottom * .85;
-      trail.scale.set(Math.min(3.2, speed * .09 * Math.max(timeScale, .5)), r, r);
+      setTrail(speed);
     }
+  } else if (a.phase === 'flyoff') {
+    a.after += realDt;
+    if (projBody) setTrail(projBody.vx); else trail.visible = false;
+    if (a.after > 1.0) finishAnim();
   } else if (a.phase === 'stopped') {
     a.t += realDt;
-    if (proj.falling) {
-      proj.vy -= 14 * dt; proj.x += proj.vx * dt; proj.y += proj.vy * dt;
-      proj.vx *= Math.pow(.4, dt);
-      const floor = pm.bottom;
-      if (proj.y < floor) { proj.y = floor; proj.vy = Math.abs(proj.vy) > 1 ? -proj.vy * .35 : 0; proj.vx *= .7; }
-      g.position.set(proj.x, proj.y, 0);
-      if (pm.spin === 'roll') proj.spinner.rotation.z -= proj.vx * dt / pm.front;
-    }
     if (a.t > 1.15) finishAnim();
   }
 
   // slow motion for the last two obstacles
   if (!REDUCED_MOTION && a.phase !== 'windup') {
     const inSlow = proj.x + pm.front >= a.slowStartX;
-    if (a.phase === 'fly' && inSlow) targetTS = .3;
-    if (a.phase === 'stopped' && a.t < .35) targetTS = .3;
-    if (a.phase === 'flyoff' && a.after < .25) targetTS = .3;
+    if (a.phase === 'fly' && inSlow) targetTS = .35;
+    if (a.phase === 'stopped' && a.t < .35) targetTS = .35;
+    if (a.phase === 'flyoff' && a.after < .25) targetTS = .35;
   }
   timeScale += (targetTS - timeScale) * Math.min(1, realDt * (targetTS < timeScale ? 18 : 5));
+}
+function setTrail(speed) {
+  const pm = proj.model, p = proj.group.position;
+  trail.visible = speed > 3;
+  trail.position.set(p.x - pm.back * .6, p.y, p.z);
+  const r = pm.spin === 'none' || pm.spin === 'axis' ? .07 : pm.bottom * .85;
+  trail.scale.set(Math.min(3.2, speed * .09 * Math.max(timeScale, .5)), r, r);
+}
+
+// The real projectile once it's loose (bounced off the last obstacle, or broke
+// through everything): gravity, bounces, rolling, and it lands on top of the
+// debris. Keeps going after the round ends until it comes to rest.
+let projBody = null;
+function updateProjBody(dt) {
+  if (!projBody || !proj) return;
+  const b = projBody, g = proj.group, pm = proj.model;
+  const fp = Math.min(pm.front, pm.back) * .7;
+  b.vy -= 14 * dt;
+  const air = Math.exp(-.3 * dt); b.vx *= air; b.vz *= air;
+  let x = g.position.x + b.vx * dt, y = g.position.y + b.vy * dt, z = g.position.z + b.vz * dt;
+  let ground = groundAt(x, z, fp) + pm.bottom;
+  if (ground - y > .12) { // ran into a taller heap: bounce off it
+    x = g.position.x; z = g.position.z; b.vx *= -.3; b.vz *= -.3;
+    ground = groundAt(x, z, fp) + pm.bottom;
+  }
+  if (y <= ground) {
+    y = ground;
+    b.vy = b.vy < -1 ? -b.vy * .35 : 0;
+    const fr = Math.exp(-dt * (pm.spin === 'roll' ? 1.1 : 5));
+    b.vx *= fr; b.vz *= fr;
+    if (b.vy === 0 && Math.hypot(b.vx, b.vz) < .03) { stampGround(x, z, fp, y + pm.bottom); projBody = null; }
+  }
+  const dx = x - g.position.x, dz = z - g.position.z;
+  g.position.set(x, y, z);
+  if (pm.spin === 'roll') { proj.spinner.rotation.z -= dx / pm.front; proj.spinner.rotation.x += dz / pm.front; }
+  else if (y > ground + .01) proj.spinner.rotation.z -= dt * 3; // tumbles while airborne
 }
 
 function finishAnim() {
@@ -1876,6 +1940,7 @@ function updateFlight(f, dt) {
 }
 function updateTest(realDt) {
   updateSpent(realDt);
+  updateTestFade(realDt);
   updateLandMark(realDt);
   if (!test) return;
   test.t += realDt;
@@ -1906,6 +1971,25 @@ function makeMarker(fromX) {
   world.add(g);
   return g;
 }
+// When the real launch goes, the test throws fade away and the pin + ring leave.
+let testFade = null;
+function clearTestMarks() {
+  if (spent.length) {
+    const mats = [];
+    for (const s of spent) s.g.traverse(c => { if (c.isMesh) { c.material = c.material.clone(); c.material.transparent = true; c.castShadow = false; mats.push(c.material); } });
+    testFade = { t: 0, items: spent, mats };
+    spent = [];
+  }
+  if (landMark && landMark.userData.closing == null) landMark.userData.closing = 0;
+}
+function updateTestFade(dt) {
+  if (!testFade) return;
+  testFade.t += dt;
+  const k = Math.min(1, testFade.t / .5);
+  for (const m of testFade.mats) m.opacity = 1 - k;
+  for (const s of testFade.items) s.g.position.y = s.y - k * .1;
+  if (k >= 1) { testFade.items.forEach(s => world.remove(s.g)); testFade.mats.forEach(m => m.dispose()); testFade = null; }
+}
 // Orange ring + 3D map pin where the FIRST test throw stopped. It stays put
 // (even if that projectile gets bumped later) and stays after test mode ends.
 let landMark = null;
@@ -1929,6 +2013,15 @@ function makeLandMark(x, z) {
 function updateLandMark(dt) {
   if (!landMark) return;
   const U = landMark.userData; U.t += dt;
+  if (U.closing != null) { // real launch: the ring closes inward, the pin pops away (reverse of its drop-in)
+    U.closing += dt;
+    const r = Math.max(.01, 1 - easeInCubic(Math.min(1, U.closing / .35))), k = Math.min(1, U.closing / .45);
+    U.ring.scale.set(r, 1, r);
+    U.pin.position.y = .14 + easeInBack(k) * 2;
+    U.pin.scale.setScalar(Math.max(.01, 1 - k * k));
+    if (k >= 1) { world.remove(landMark); landMark = null; }
+    return;
+  }
   const r = Math.min(1, U.t / .3);
   U.ring.scale.setScalar(Math.max(.01, easeOutBack(r)));
   const d = Math.min(1, U.t / .45); // pin drops in with a little bounce, then floats
@@ -2190,6 +2283,7 @@ function submit() {
   setLocked(true);
   renderProgress();
   if (n !== line.length) setLineCount(n, false);
+  clearTestMarks();
   startLaunch(n);
 }
 el.submit.addEventListener('click', submit);
@@ -2397,6 +2491,7 @@ function loop() {
   updateAnim(realDt);
   const simDt = realDt * timeScale;
   updatePieces(simDt);
+  updateProjBody(simDt);
   updateObstacles(simDt, realDt);
   updateConfetti(realDt);
   updateTest(realDt);
