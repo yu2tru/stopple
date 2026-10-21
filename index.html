@@ -221,7 +221,8 @@
 {
   "imports": {
     "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+    "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"
   }
 }
 </script>
@@ -339,6 +340,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import * as CANNON from 'cannon-es';
 
 /* =====================================================================
    CONFIG
@@ -892,7 +894,7 @@ const OBSTACLE_MODELS = {
         h.position.set(o.group.position.x, .39, side * .02);
         addPiece(h, {
           v: V(rand(1, 1.8) * f, rand(1.8, 2.6), side * rand(1.2, 2)), av: V(side * rand(4, 7), rand(-3, 3), rand(-2, 2)),
-          rest: .5, target: new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI, rand(0, 6.28), 0, 'YXZ')),
+          dims: [.78, .5, .78], offset: [0, .25, 0],
         });
       }
     },
@@ -1219,7 +1221,6 @@ let pieces = [];        // debris with simple physics
 let proj = null;        // { group, model, y }
 let pedestal = null;
 let trail = null;
-let wallX = Infinity, wallH = 0; // debris cannot pass a standing obstacle
 
 const curPrompt = () => game.prompt;
 const obstModel = () => OBSTACLE_MODELS[curPrompt().obstacle];
@@ -1232,9 +1233,9 @@ const projStartX = () => -obstModel().depth / 2 - 2.0 - projModel().front;
 function clearWorld() {
   while (world.children.length) world.remove(world.children[0]);
   line = []; pieces = []; proj = null; pedestal = null; trail = null;
-  wallX = Infinity;
+  phys = makePhys();
   puffs.forEach(p => p.m.material.dispose()); puffs = [];
-  test = null; marker = null; viewExtraX = -Infinity; game.testing = null; spent = []; flights = []; stand = null; landMark = null; heightMap = new Map(); projBody = null; testFade = null;
+  test = null; marker = null; viewExtraX = -Infinity; game.testing = null; spent = []; flights = []; stand = null; landMark = null; projBody = null; testFade = null;
 }
 
 function makeObstacle(i, popIn) {
@@ -1384,42 +1385,95 @@ function resize() {
    DEBRIS
    ===================================================================== */
 const UP = new THREE.Vector3(0, 1, 0);
-// GROUND HEIGHT MAP for the debris pile. Settled debris (and the settled
-// projectile) raise the ground in the cells they cover, so later pieces land
-// on top of them and stack up. Test throws are not part of it, and neither
-// are the standing obstacles: each group only collides with itself.
-const HM_CELL = .1;
-let heightMap = new Map();
-const hmKey = (ix, iz) => ix * 65536 + iz;
-function groundAt(x, z, half) {
-  let h = 0;
-  const x0 = Math.floor((x - half) / HM_CELL), x1 = Math.floor((x + half) / HM_CELL);
-  const z0 = Math.floor((z - half) / HM_CELL), z1 = Math.floor((z + half) / HM_CELL);
-  for (let ix = x0; ix <= x1; ix++) for (let iz = z0; iz <= z1; iz++) { const v = heightMap.get(hmKey(ix, iz)); if (v > h) h = v; }
-  return h;
+// DEBRIS PHYSICS (cannon-es rigid bodies)
+// Broken pieces are real rigid bodies from the moment they break: they tumble,
+// lean on and stack on each other at any angle. The real projectile joins in
+// once it's loose (bounced off the last obstacle or broke through). Standing
+// obstacles are an invisible solid wall. Test throws are NOT in this world.
+const PH = { BIG: 1, SMALL: 2, STATIC: 4 }; // tiny bits only hit big pieces and the ground (cheaper)
+let phys = null;
+function makePhys() {
+  const w = new CANNON.World({ gravity: new CANNON.Vec3(0, -16, 0), allowSleep: true });
+  w.broadphase = new CANNON.SAPBroadphase(w);
+  w.solver.iterations = 10;
+  w.defaultContactMaterial.friction = .55;
+  w.defaultContactMaterial.restitution = .12;
+  w.defaultContactMaterial.contactEquationRelaxation = 4;
+  const ground = new CANNON.Body({ mass: 0, shape: new CANNON.Plane(), collisionFilterGroup: PH.STATIC, collisionFilterMask: PH.BIG | PH.SMALL });
+  ground.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+  w.addBody(ground);
+  w.addEventListener('preStep', () => {
+    for (const b of w.bodies) {
+      if (!b.lift || b.sleepState === CANNON.Body.SLEEPING) continue;
+      b.force.y += b.mass * 16 * b.lift; // light stuff (fluff, tissue, pages) falls slowly
+      if (b.flutter) { const t = performance.now() / 1000 + b.id; b.force.x += Math.sin(t * 7) * b.mass * 3; b.force.z += Math.cos(t * 6) * b.mass * 3; }
+    }
+  });
+  w.addEventListener('postStep', () => { // keep overlapping spawns from flinging pieces away
+    for (const b of w.bodies) { const s = b.velocity.length(); if (s > 14) b.velocity.scale(14 / s, b.velocity); }
+  });
+  return w;
 }
-function stampGround(x, z, half, top) {
-  const x0 = Math.floor((x - half) / HM_CELL), x1 = Math.floor((x + half) / HM_CELL);
-  const z0 = Math.floor((z - half) / HM_CELL), z1 = Math.floor((z + half) / HM_CELL);
-  for (let ix = x0; ix <= x1; ix++) for (let iz = z0; iz <= z1; iz++) { const k = hmKey(ix, iz); if (!(heightMap.get(k) >= top)) heightMap.set(k, top); }
+const toVec = v => new CANNON.Vec3(v.x, v.y, v.z);
+function makeBody(obj, { shape, offset, mass, v, av, drag = .25, grav = 1, small }) {
+  const b = new CANNON.Body({
+    mass,
+    linearDamping: drag > .3 ? 1 - Math.exp(-drag) : .04,
+    angularDamping: drag > 1.5 ? .8 : .12,
+    collisionFilterGroup: small ? PH.SMALL : PH.BIG,
+    collisionFilterMask: small ? PH.BIG | PH.STATIC : PH.BIG | PH.SMALL | PH.STATIC,
+    sleepSpeedLimit: .15, sleepTimeLimit: .6,
+  });
+  b.addShape(shape, offset ? new CANNON.Vec3(...offset) : undefined);
+  b.position.copy(toVec(obj.position));
+  b.quaternion.set(obj.quaternion.x, obj.quaternion.y, obj.quaternion.z, obj.quaternion.w);
+  if (v) b.velocity.copy(toVec(v));
+  if (av) b.angularVelocity.copy(toVec(av));
+  if (grav < 1) b.lift = 1 - grav;
+  if (drag > 1.5) b.flutter = true;
+  phys.addBody(b);
+  return b;
 }
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
-// orientation + resting height for a piece lying on its thinnest side
-function flatRest(dims) {
-  const i = dims.indexOf(Math.min(...dims)), yaw = rand(0, Math.PI * 2);
-  const e = i === 1 ? new THREE.Euler(0, yaw, 0) : i === 0 ? new THREE.Euler(0, yaw, Math.PI / 2, 'YXZ') : new THREE.Euler(Math.PI / 2, yaw, 0, 'YXZ');
-  return { target: new THREE.Quaternion().setFromEuler(e), rest: dims[i] / 2 };
-}
-// add any object to the debris simulation. target null = it rolls (spheres)
-function addPiece(obj, { v, av, dims, drag = .25, grav = 1, rest, target }) {
-  if (target === undefined) { const fr = flatRest(dims); target = fr.target; if (rest === undefined) rest = fr.rest; }
+// add any object to the debris simulation.
+// dims = its size along its own axes (box). sphere = radius (ball). offset = shape centre.
+function addPiece(obj, { v, av, dims, drag = .25, grav = 1, sphere, rest, target, offset }) {
   const shadow = pieces.length < 240;
   obj.traverse(c => { if (c.isMesh) { c.castShadow = shadow && c.material !== M.glassShard; c.receiveShadow = true; } });
-  // footprint for the height map: lying flat it covers its two larger sides
-  let fp;
-  if (dims) { const d = [...dims].sort((a, b) => a - b); fp = (d[1] + d[2]) / 4 * .7; } else fp = rest * .75;
-  pieces.push({ m: obj, v, av, drag, grav, rest, half: rest, fp, target, grounded: false, sleep: 0, t: 0 });
+  let shape, size;
+  if (sphere || target === null) { const r = sphere || rest; shape = new CANNON.Sphere(r); size = [2 * r, 2 * r, 2 * r]; }
+  else { size = dims; shape = new CANNON.Box(new CANNON.Vec3(Math.max(.006, dims[0] / 2), Math.max(.006, dims[1] / 2), Math.max(.006, dims[2] / 2))); }
+  const vol = size[0] * size[1] * size[2];
+  const small = Math.max(...size) < .12;
+  const body = makeBody(obj, { shape, offset, mass: Math.max(.02, vol * 6), v, av: av ? av.clone().multiplyScalar(.5) : null, drag, grav, small });
+  pieces.push({ m: obj, body });
   world.add(obj);
+}
+// the real projectile becomes a body once it's loose
+let projBody = null;
+function releaseProjectile(v) {
+  const pm = proj.model, g = proj.group, p = game.prompt;
+  g.quaternion.multiply(proj.spinner.quaternion); proj.spinner.quaternion.identity(); // bake its spin into the body
+  let shape, offset;
+  if (pm.spin === 'roll') shape = new CANNON.Sphere(pm.front);
+  else if (pm.spin === 'flat') shape = new CANNON.Box(new CANNON.Vec3(pm.front, pm.bottom, pm.front));
+  else { shape = new CANNON.Box(new CANNON.Vec3((pm.front + pm.back) / 2, pm.bottom, Math.max(pm.bottom, .06))); offset = [(pm.front - pm.back) / 2, 0, 0]; }
+  projBody = makeBody(g, { shape, offset, mass: clamp(p.mass * 4, .3, 12), v, av: pm.spin === 'roll' ? V(0, 0, -v.x / pm.front) : V(rand(-2, 2), rand(-2, 2), rand(-4, 4)) });
+}
+// standing obstacles from the stop point onward: an invisible solid block
+function addStandingWall(fromIdx) {
+  const def = obstModel();
+  const x0 = frontFace(fromIdx), x1 = obstX(line.length - 1) + def.depth / 2;
+  const b = new CANNON.Body({ mass: 0, collisionFilterGroup: PH.STATIC, collisionFilterMask: PH.BIG | PH.SMALL });
+  b.addShape(new CANNON.Box(new CANNON.Vec3((x1 - x0) / 2, def.height / 2, def.width / 2)));
+  b.position.set((x0 + x1) / 2, def.height / 2, 0);
+  phys.addBody(b);
+}
+function stepPhysics(dt) {
+  if (!phys || dt <= 0) return;
+  phys.step(1 / 60, dt, 5);
+  for (const p of pieces) { p.m.position.copy(p.body.position); p.m.quaternion.copy(p.body.quaternion); }
+  if (projBody && proj) { proj.group.position.copy(projBody.position); proj.group.quaternion.copy(projBody.quaternion); }
 }
 // a flat panel split along a jagged line, as two ready-to-use pieces.
 // The panel stands in the y-z plane (thickness along x), bottom at y = 0.
@@ -1501,7 +1555,7 @@ function spawnPieces(o, impactSpeed) {
   if (def.puff) puff(o.group.position.x, projY(), 0, def.puff);
   const total = def.pieces.reduce((s, p) => s + p.n, 0);
   if (!total) return;
-  const budget = clamp(Math.round(260 / Math.max(line.length, 1)), 5, total);
+  const budget = clamp(Math.round(200 / Math.max(line.length, 1)), 5, total);
   const scale = budget / total;
   const hitY = projY();
   for (const spec of def.pieces) {
@@ -1517,43 +1571,8 @@ function spawnPieces(o, impactSpeed) {
       const near = 1.25 - Math.min(1, Math.hypot(y - hitY, z) / 1.2);
       const v = V(rand(.8, 2.6) + impactSpeed * .12 * near, rand(.8, 3.8) * (.6 + near), z / (def.width / 2) * rand(.6, 2.6) + rand(-.8, .8));
       const unit = spec.geo === 'shard' ? .7 : 1;
-      addPiece(m, { dims: [m.scale.x * unit, m.scale.y * unit, m.scale.z * unit], v, av: V(rand(-12, 12), rand(-12, 12), rand(-12, 12)), drag: spec.drag || .25, grav: spec.grav || 1 });
-    }
-  }
-}
-function updatePieces(dt) {
-  for (const p of pieces) {
-    if (p.sleep > .4) continue;
-    p.t += dt;
-    p.v.y -= 18 * p.grav * dt;
-    const damp = Math.exp(-p.drag * dt);
-    p.v.x *= damp; p.v.z *= damp; if (p.v.y > 0 || p.drag > 1) p.v.y *= damp;
-    if (p.drag > 1.5 && !p.grounded) { p.v.x += Math.sin(p.t * 7 + p.av.x) * dt * 2; p.v.z += Math.cos(p.t * 6 + p.av.y) * dt * 2; } // flutter
-    const pos = p.m.position;
-    const px = pos.x, pz = pos.z;
-    pos.addScaledVector(p.v, dt);
-    let ground = groundAt(pos.x, pos.z, p.fp);
-    if (ground - (pos.y - p.half) > .1) { // slid into a taller heap: bump off it
-      pos.x = px; pos.z = pz; p.v.x *= -.3; p.v.z *= -.3;
-      ground = groundAt(pos.x, pos.z, p.fp);
-    }
-    p.rest = ground + p.half;
-    if (pos.x > wallX - .04 && pos.y < wallH) { pos.x = wallX - .04; if (p.v.x > 0) p.v.x *= -.25; }
-    const rolls = p.target === null;
-    if (pos.y <= p.rest) {
-      pos.y = p.rest;
-      if (p.v.y < 0) p.v.y = Math.abs(p.v.y) > 1.2 ? -p.v.y * (rolls ? .35 : .28) : 0;
-      const fr = Math.pow(rolls ? .35 : .02, dt);
-      p.v.x *= fr; p.v.z *= fr;
-      p.grounded = true;
-    }
-    if (p.grounded && pos.y <= p.rest + .02) {
-      if (rolls) { p.m.rotation.z -= p.v.x * dt / p.half; p.m.rotation.x += p.v.z * dt / p.half; }
-      else p.m.quaternion.slerp(p.target, Math.min(1, dt * 9));
-      if (p.v.lengthSq() < .004) p.sleep += dt; else p.sleep = 0;
-      if (p.sleep > .25 && !p.stamped) { p.stamped = true; stampGround(pos.x, pos.z, p.fp, pos.y + p.half); } // now others can land on it
-    } else {
-      p.m.rotation.x += p.av.x * dt; p.m.rotation.y += p.av.y * dt; p.m.rotation.z += p.av.z * dt;
+      const sphere = spec.geo === 'ball' ? (m.scale.x + m.scale.y + m.scale.z) / 6 : spec.geo === 'dodec' ? s * .5 : undefined;
+      addPiece(m, { sphere, dims: [m.scale.x * unit, m.scale.y * unit, m.scale.z * unit], v, av: V(rand(-12, 12), rand(-12, 12), rand(-12, 12)), drag: spec.drag || .25, grav: spec.grav || 1 });
     }
   }
 }
@@ -1668,21 +1687,21 @@ function updateAnim(realDt) {
         a.phase = 'stopped'; a.t = 0;
         proj.x = frontFace(a.nextIdx) - pm.front + (pm.sticky || 0);
         g.position.x = proj.x;
-        wallX = frontFace(a.nextIdx); wallH = obstModel().height;
         startWobble(o, 1);
         if (obstModel().crack) addCracks(o, obstModel().crack === 'light');
         Sound.stopHit(obstModel().sound);
         if (!REDUCED_MOTION) shake = Math.min(.14, shake + .04);
         trail.visible = false;
-        if (pm.sticky) { o.inner.attach(g); proj.stuck = true; }
-        else projBody = { vx: -rand(1.2, 2), vy: 1.4, vz: rand(-.4, .4) }; // bounces back and drops onto the debris
+        if (pm.sticky) { o.inner.attach(g); proj.stuck = true; addStandingWall(a.nextIdx); }
+        else { addStandingWall(a.nextIdx); releaseProjectile(V(-rand(1.2, 2), 1.4, rand(-.4, .4))); } // bounces back and drops onto the debris
         break;
       }
     }
     if (a.phase === 'fly') {
       if (a.nextIdx >= a.n) { // broke through everything: it flies on under real physics
         a.phase = 'flyoff'; a.after = 0;
-        projBody = { vx: speed, vy: .5, vz: rand(-.25, .25) };
+        g.position.set(proj.x, proj.y, 0);
+        releaseProjectile(V(speed, .5, rand(-.25, .25)));
       } else g.position.set(proj.x, proj.y, 0);
       if (pm.spin === 'roll') proj.spinner.rotation.z -= speed * dt / pm.front * .6;
       if (pm.spin === 'flat') proj.spinner.rotation.y += speed * dt * 2;
@@ -1692,7 +1711,7 @@ function updateAnim(realDt) {
     }
   } else if (a.phase === 'flyoff') {
     a.after += realDt;
-    if (projBody) setTrail(projBody.vx); else trail.visible = false;
+    if (projBody) setTrail(projBody.velocity.x); else trail.visible = false;
     if (a.after > 1.0) finishAnim();
   } else if (a.phase === 'stopped') {
     a.t += realDt;
@@ -1714,35 +1733,6 @@ function setTrail(speed) {
   trail.position.set(p.x - pm.back * .6, p.y, p.z);
   const r = pm.spin === 'none' || pm.spin === 'axis' ? .07 : pm.bottom * .85;
   trail.scale.set(Math.min(3.2, speed * .09 * Math.max(timeScale, .5)), r, r);
-}
-
-// The real projectile once it's loose (bounced off the last obstacle, or broke
-// through everything): gravity, bounces, rolling, and it lands on top of the
-// debris. Keeps going after the round ends until it comes to rest.
-let projBody = null;
-function updateProjBody(dt) {
-  if (!projBody || !proj) return;
-  const b = projBody, g = proj.group, pm = proj.model;
-  const fp = Math.min(pm.front, pm.back) * .7;
-  b.vy -= 14 * dt;
-  const air = Math.exp(-.3 * dt); b.vx *= air; b.vz *= air;
-  let x = g.position.x + b.vx * dt, y = g.position.y + b.vy * dt, z = g.position.z + b.vz * dt;
-  let ground = groundAt(x, z, fp) + pm.bottom;
-  if (ground - y > .12) { // ran into a taller heap: bounce off it
-    x = g.position.x; z = g.position.z; b.vx *= -.3; b.vz *= -.3;
-    ground = groundAt(x, z, fp) + pm.bottom;
-  }
-  if (y <= ground) {
-    y = ground;
-    b.vy = b.vy < -1 ? -b.vy * .35 : 0;
-    const fr = Math.exp(-dt * (pm.spin === 'roll' ? 1.1 : 5));
-    b.vx *= fr; b.vz *= fr;
-    if (b.vy === 0 && Math.hypot(b.vx, b.vz) < .03) { stampGround(x, z, fp, y + pm.bottom); projBody = null; }
-  }
-  const dx = x - g.position.x, dz = z - g.position.z;
-  g.position.set(x, y, z);
-  if (pm.spin === 'roll') { proj.spinner.rotation.z -= dx / pm.front; proj.spinner.rotation.x += dz / pm.front; }
-  else if (y > ground + .01) proj.spinner.rotation.z -= dt * 3; // tumbles while airborne
 }
 
 function finishAnim() {
@@ -2490,8 +2480,7 @@ function loop() {
   const realDt = Math.min(clock.getDelta(), 1 / 20);
   updateAnim(realDt);
   const simDt = realDt * timeScale;
-  updatePieces(simDt);
-  updateProjBody(simDt);
+  stepPhysics(simDt);
   updateObstacles(simDt, realDt);
   updateConfetti(realDt);
   updateTest(realDt);
