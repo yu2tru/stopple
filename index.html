@@ -56,11 +56,11 @@
   #app > header, #app > .bar, #app > .panel { pointer-events: auto; }
 
   /* Header */
-  header.top, .top-row { display: flex; align-items: center; justify-content: space-between; height: 64px; }
-  .brand { display: flex; align-items: baseline; gap: 8px; }
-  .wordmark { font-family: inherit; color: var(--ink); background: none; border: 0; padding: 0; margin: 0; cursor: pointer; font-weight: 900; font-size: 42px; letter-spacing: -0.06em; line-height: 1; }
-  .pno { font-weight: 800; font-size: 15px; color: var(--muted); letter-spacing: -0.02em; }
-  .icons { display: flex; gap: 2px; margin-right: -8px; }
+  header.top { display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 8px 10px 4px 16px; margin: 0 -16px; }
+  .brand { display: flex; align-items: baseline; gap: 7px; }
+  .wordmark { font-family: inherit; color: var(--ink); background: none; border: 0; padding: 0; margin: 0; cursor: pointer; font-weight: 900; font-size: 30px; letter-spacing: -.06em; line-height: 1; }
+  .pno { font-weight: 800; font-size: 14px; color: var(--muted); letter-spacing: -0.02em; }
+  .icons { display: flex; gap: 2px; }
   .icon-btn {
     width: 44px; height: 44px; border-radius: 50%; border: 0; background: transparent;
     display: grid; place-items: center; transition: background .15s;
@@ -195,53 +195,42 @@
   .countdown { text-align: center; font-weight: 800; font-size: 13px; color: var(--muted); margin-top: 14px; }
   .section-label { font-weight: 900; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
 
-  /* Home page: one screen, no scrolling. The 3D hero takes whatever height is left. */
-  #home {
-    position: fixed; top: 0; left: 0; right: 0; height: 100%; z-index: 10;
-    max-width: 480px; margin: 0 auto; overflow: hidden;
-    display: flex; flex-direction: column;
-    padding: env(safe-area-inset-top) 14px calc(28px + env(safe-area-inset-bottom));
-    pointer-events: none; transition: opacity .25s ease;
-  }
-  @supports (height: 100dvh) { #home { height: 100dvh; } }
+  /* ---------- home (same layout and sizes as Scoople's home page) ---------- */
+  /* fits one screen: the hero takes whatever height is left after the cards */
+  #home { position: fixed; inset: 0; z-index: 10; overflow: hidden; transition: opacity .35s;
+    padding: 0 0 env(safe-area-inset-bottom); }
   body.booting #home, body.booting #app { opacity: 0; }
-  .home-hero { flex: 1 1 auto; min-height: 110px; position: relative; }
-  .home-hero .wordmark { pointer-events: auto; }
-  .home-body { flex: none; pointer-events: auto; display: grid; gap: 8px; grid-template-columns: minmax(0, 1fr); }
-  .home-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 2px; }
-  #homeDate { font-weight: 800; font-size: 14.5px; color: var(--ink-2); letter-spacing: -0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-  .home-icons { display: flex; gap: 8px; flex: none; }
-  .round-btn {
-    width: 42px; height: 42px; border-radius: 50%; border: 0; background: var(--card);
-    box-shadow: 0 3px 10px rgba(80, 60, 10, .08); display: grid; place-items: center;
-  }
-  .round-btn svg { width: 20px; height: 20px; }
-  .hcard {
-    background: var(--card); border-radius: 22px; padding: 15px 14px 14px; border: 0; text-align: left;
-    box-shadow: 0 4px 14px rgba(80, 60, 10, .06);
-  }
-  .hlabel { font-weight: 900; font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); margin-bottom: 3px; }
-  .today-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-  .today-row h3 { margin: 0; font-weight: 900; font-size: 24px; line-height: 1.12; letter-spacing: -0.045em; white-space: nowrap; }
-  .dots { display: flex; gap: 4px; flex: none; }
-  .dots i { flex: none; width: 15px; height: 15px; border-radius: 50%; border: 2.2px solid var(--ink); }
+  #home { pointer-events: none; }   /* drags on the hero reach the 3D scene */
+  .home-body, .home-top .wordmark { pointer-events: auto; }
+  .home-col { width: min(480px, 100%); height: 100%; margin: 0 auto; display: flex; flex-direction: column; padding-bottom: 10px; }
+  .hero { position: relative; flex: 1 1 0; min-height: 120px; }   /* transparent: the live 3D scene shows through */
+  .home-top { display: flex; align-items: center; height: calc(56px + env(safe-area-inset-top)); padding: calc(8px + env(safe-area-inset-top)) 10px 4px 16px; }
+  .home-body { flex: none; padding: 0 14px; background: linear-gradient(to bottom, transparent, var(--bg) 22px); }
+  .home-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+  .home-date { font-weight: 800; font-size: 15px; color: var(--ink-2); letter-spacing: -.02em; }
+  .home-icons { display: flex; gap: 8px; }
+  .rbtn { width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--card); display: grid; place-items: center; box-shadow: 0 2px 0 rgba(31,28,21,.05); }
+  .rbtn svg { width: 21px; height: 21px; }
+  .hcard { background: var(--card); border-radius: 22px; padding: 13px 14px; margin-bottom: 8px; box-shadow: 0 2px 0 rgba(31,28,21,.04); }
+  .eyebrow { font-weight: 800; font-size: 12px; letter-spacing: .14em; color: var(--muted); text-transform: uppercase; }
+  .today-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 1px; }
+  .today-row b { font-weight: 900; font-size: 24px; letter-spacing: -.05em; }
+  .dots { display: flex; gap: 6px; }
+  .dots i { width: 13px; height: 13px; border-radius: 50%; border: 2.5px solid #4b4535; box-sizing: border-box; }
   .dots i.exact { background: var(--green); border-color: var(--green); }
   .dots i.over { background: var(--yellow); border-color: var(--yellow); }
   .dots i.under { background: var(--red); border-color: var(--red); }
-  .hsub { margin: 4px 0 10px; font-weight: 700; font-size: 14px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #homePlay { height: 50px; font-size: 18px; }
-  .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin-top: 6px; }
-  .tile, .mini { display: flex; align-items: center; gap: 6px; min-width: 0; }
-  .tile { background: rgba(31,28,21,.045); border: 0; border-radius: 18px; padding: 0 6px 0 8px; gap: 5px; height: 48px; text-align: left; }
-  .tile:disabled { opacity: .45; cursor: default; }
-  .tile:not(:disabled):active, .mini:active { transform: scale(.97); }
-  .emo { font-size: 21px; line-height: 1; flex: none; }
-  .tt { display: flex; flex-direction: column; min-width: 0; }
-  .tt b { font-weight: 900; font-size: 15px; letter-spacing: -0.04em; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .tt small { font-weight: 700; font-size: 11.5px; letter-spacing: -0.015em; line-height: 1.2; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .mini-row { display: grid; grid-template-columns: minmax(0, 1.42fr) minmax(0, 1.13fr) minmax(0, .91fr); gap: 7px; }
-  .mini { padding: 0 8px 0 10px; gap: 5px; height: 52px; border-radius: 20px; }
-  .mini .emo { font-size: 22px; }
+  .hsub { font-weight: 700; font-size: 14px; color: var(--ink-2); margin: 3px 0 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #homePlay { height: 52px; font-size: 18px; }
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-top: 8px; }
+  .tile { display: flex; align-items: center; gap: 7px; min-height: 50px; padding: 8px 9px; border: 0; border-radius: 16px; background: rgba(246,235,192,.5);
+    font-family: inherit; color: var(--ink); font-weight: 900; font-size: 14px; letter-spacing: -.03em; text-align: left; line-height: 1.1; cursor: pointer; }
+  .tile .ic { font-size: 21px; flex: none; }
+  .tile small { display: block; font-weight: 800; font-size: 11px; color: var(--muted); letter-spacing: 0; margin-top: 2px; }
+  .tile[disabled] { opacity: .55; cursor: default; }
+  .tile:not([disabled]):active { transform: scale(.97); }
+  .tiles2 { display: grid; grid-template-columns: 1.25fr 1fr .8fr; gap: 7px; }
+  .tiles2 .tile { background: var(--card); min-height: 54px; box-shadow: 0 2px 0 rgba(31,28,21,.04); }
   .msub { margin: -6px 0 16px; font-weight: 700; font-size: 15px; color: var(--muted); }
   .list { display: grid; gap: 8px; }
   .lrow {
@@ -394,38 +383,37 @@
   </div>
 </div>
 
-<div id="home" hidden>
-  <div class="home-hero" id="homeHero">
-    <div class="top-row"><button class="wordmark" id="homeWord" tabindex="-1">stopple</button></div>
-  </div>
-  <div class="home-body">
-    <div class="home-meta">
-      <span id="homeDate"></span>
-      <div class="home-icons">
-        <button class="round-btn" id="homeSound" aria-label="Mute sound"></button>
-        <button class="round-btn" id="homeHelp" aria-label="How to play">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><path d="M9.3 9.2a2.8 2.8 0 0 1 5.4 1c0 1.9-2.7 2.4-2.7 4"/><circle cx="12" cy="17.6" r=".6" fill="currentColor"/></svg>
-        </button>
-      </div>
+<div id="home" hidden aria-label="Home">
+  <div class="home-col">
+    <div class="hero" id="homeHero">
+      <div class="home-top"><button class="wordmark" id="homeWord" tabindex="-1">stopple</button></div>
     </div>
-    <section class="hcard">
-      <div class="hlabel">today</div>
-      <div class="today-row"><h3>Five launches</h3><div class="dots" id="homeDots"></div></div>
-      <p class="hsub">Guess how many stop each · about 3 min</p>
-      <button class="btn" id="homePlay">Play today</button>
-    </section>
-    <section class="hcard">
-      <div class="hlabel">more ways to play</div>
-      <div class="tiles">
-        <button class="tile" id="homeLevels"><span class="emo">🎯</span><span class="tt"><b>Levels</b><small>pick any</small></span></button>
-        <button class="tile" id="homePractice"><span class="emo">🎲</span><span class="tt"><b>Practice</b><small>random</small></span></button>
-        <button class="tile" disabled><span class="emo">🏆</span><span class="tt"><b>Gauntlet</b><small>soon</small></span></button>
+    <div class="home-body">
+      <div class="home-row"><div class="home-date" id="homeDate"></div>
+        <div class="home-icons">
+          <button class="rbtn" id="homeSound" aria-label="Toggle sound"></button>
+          <button class="rbtn" id="homeHelp" aria-label="How to play"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><path d="M9.3 9.2a2.8 2.8 0 0 1 5.4 1c0 1.9-2.7 2.4-2.7 4"/><circle cx="12" cy="17.6" r=".6" fill="currentColor"/></svg></button>
+        </div>
       </div>
-    </section>
-    <div class="mini-row">
-      <button class="hcard mini" id="homeCollection"><span class="emo">🧸</span><span class="tt"><b>Collection</b><small id="homeCollCount">0/0</small></span></button>
-      <button class="hcard mini" id="homeStats"><span class="emo">📊</span><span class="tt"><b>Stats</b><small>your history</small></span></button>
-      <div class="hcard mini"><span class="emo">🔥</span><span class="tt"><b id="homeStreak">0</b><small>streak</small></span></div>
+      <div class="hcard">
+        <div class="eyebrow">Today</div>
+        <div class="today-row"><b>Five launches</b><div class="dots" id="homeDots"></div></div>
+        <div class="hsub" id="homeSub">Guess how many stop each · about 3 min</div>
+        <button class="btn" id="homePlay">Play today</button>
+      </div>
+      <div class="hcard">
+        <div class="eyebrow">More ways to play</div>
+        <div class="tiles">
+          <button class="tile" id="homeLevels"><span class="ic">🎯</span><span>Levels<small>pick any</small></span></button>
+          <button class="tile" id="homePractice"><span class="ic">🎲</span><span>Practice<small>random</small></span></button>
+          <button class="tile" disabled><span class="ic">🏆</span><span>Gauntlet<small>soon</small></span></button>
+        </div>
+      </div>
+      <div class="tiles2">
+        <button class="tile" id="homeCollection"><span class="ic">🧸</span><span>Collection<small id="homeCollCount">0/0</small></span></button>
+        <button class="tile" id="homeStats"><span class="ic">📊</span><span>Stats<small>your history</small></span></button>
+        <button class="tile" id="homeStreakBtn" aria-label="Current streak"><span class="ic">🔥</span><span><span id="homeStreak">0</span><small>streak</small></span></button>
+      </div>
     </div>
   </div>
 </div>
@@ -2633,14 +2621,7 @@ function renderHome() {
   $('homeCollCount').textContent = `${c.got}/${c.total}`;
   $('homeStreak').textContent = currentStreak();
 }
-function fitHome() {
-  const body = document.querySelector('.home-body');
-  const z = Math.min(1, innerWidth / 390);
-  body.style.zoom = z < 1 ? String(z) : '';
-}
-window.addEventListener('resize', fitHome);
 function showHome() {
-  fitHome();
   if (game.phase === 'playing' || game.testing) return;
   homeOpen = true;
   $('home').hidden = false; $('app').hidden = true; $('fade').hidden = true;
@@ -2660,6 +2641,7 @@ $('gameWord').addEventListener('click', showHome);
 $('homeHelp').addEventListener('click', () => openModal('helpModal'));
 $('homeSound').addEventListener('click', () => el.sound.click());
 $('homeStats').addEventListener('click', openStats);
+$('homeStreakBtn').addEventListener('click', openStats);
 $('homePlay').addEventListener('click', () => {
   hideHome();
   if (game.mode !== 'daily') backToDaily();
