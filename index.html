@@ -1779,12 +1779,15 @@ function startLaunch(n) {
   const rel = i => Math.max(.22, Math.sqrt(fracAfter(i)));
   // the point where it runs out of energy: in front of obstacle #broken (real or not)
   const endX = frontFace(broken) - pm.front;
-  // pick the launch speed so the whole run takes about 2.2 s
+  // t1 = how long the run takes at speed 1
   const encounter = Math.min(n, broken + 1);
   let t1 = (frontFace(0) - startX) / 1;
   for (let i = 0; i < encounter - 1; i++) t1 += (frontFace(i + 1) - frontFace(i)) / rel(i + 1);
   if (n <= broken) t1 += Math.max(.3, endX - frontFace(n - 1)) / rel(n); // carries on past the end of the line
-  const base = Math.max(4, t1 / 2.2);
+  // launch speed comes from the mph: the same starting speed as this prompt's test throw
+  // (only sped up if a very long line would otherwise take more than 4 s)
+  const tp = testParams();
+  const base = Math.max(tp.D * tp.ease / tp.T, t1 / 4);
   anim = { phase: 'windup', t: 0, n, broken, KE, E: p.breakEnergy, nextIdx: 0, base, rel, speed: base, after: 0, startX, endX };
   timeScale = 1;
 }
